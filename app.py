@@ -1180,17 +1180,17 @@ if not run_button or not hypothesis.strip():
     st.markdown("""<div class="proof-section">
 <div class="proof-grid">
 <div class="proof-item">
-<div class="proof-icon">📐</div>
+<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 6-10"/></svg></div>
 <div class="proof-title">Causal Modeling</div>
 <div class="proof-desc">Automated IV selection and robustness checks powered by global econometric databases.</div>
 </div>
 <div class="proof-item">
-<div class="proof-icon">📝</div>
+<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></div>
 <div class="proof-title">Full Manuscripts</div>
 <div class="proof-desc">Intro, Lit Review, and Conclusion drafted in academic tone with reproducible code.</div>
 </div>
 <div class="proof-item">
-<div class="proof-icon">🔗</div>
+<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M9 17H7A5 5 0 017 7h2"/><path d="M15 7h2a5 5 0 010 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
 <div class="proof-title">Verified Citations</div>
 <div class="proof-desc">Direct links to sources across PubMed, SSRN, and Semantic Scholar.</div>
 </div>
@@ -1220,12 +1220,29 @@ if not run_button or not hypothesis.strip():
 </div>
 </div>""", unsafe_allow_html=True)
 
-    # CTA button via Streamlit native button (HTML onclick doesn't work in Streamlit)
-    st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
-    cta_cols = st.columns([1, 2, 1])
-    with cta_cols[1]:
-        if st.button("Try Empirica Free ↑", key="cta_scroll", use_container_width=True):
-            st.rerun()
+    # CTA button with working scroll-to-top
+    import streamlit.components.v1 as components
+    components.html("""
+    <div style="text-align:center; padding:1.5rem 0 0.5rem 0;">
+        <button onclick="window.parent.document.querySelector('section.main').scrollTo({top:0,behavior:'smooth'})"
+            style="
+                background:#0F172A;
+                color:#FFF;
+                font-family:'Inter',sans-serif;
+                font-weight:600;
+                font-size:0.95rem;
+                padding:0.85rem 2.5rem;
+                border-radius:14px;
+                border:none;
+                cursor:pointer;
+                box-shadow:0 4px 14px rgba(0,58,112,0.18);
+                transition:all 0.25s ease;
+            "
+            onmouseover="this.style.background='#003A70';this.style.boxShadow='0 10px 30px rgba(0,58,112,0.25)';this.style.transform='translateY(-2px)'"
+            onmouseout="this.style.background='#0F172A';this.style.boxShadow='0 4px 14px rgba(0,58,112,0.18)';this.style.transform='translateY(0)'"
+        >Try Empirica Free ↑</button>
+    </div>
+    """, height=80)
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="emp-footer">
