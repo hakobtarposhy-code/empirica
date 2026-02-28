@@ -48,30 +48,15 @@ st.markdown("""
     .logo-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         cursor: default;
-    }
-    .logo-icon {
-        width: 32px; height: 32px;
-        background: #0F172A;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .logo-icon span {
-        color: white;
-        font-family: 'Playfair Display', serif;
-        font-weight: 700;
-        font-size: 18px;
-        line-height: 1;
     }
     .logo-name {
         font-family: 'Inter', sans-serif;
         font-weight: 700;
-        font-size: 1.25rem;
+        font-size: 1.5rem;
         color: #0F172A;
-        letter-spacing: -0.03em;
+        letter-spacing: -0.04em;
     }
 
     /* ── Hero ── */
@@ -343,22 +328,8 @@ st.markdown("""
     .emp-footer .footer-logo {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         margin-bottom: 0.6rem;
-    }
-    .emp-footer .footer-icon {
-        width: 24px; height: 24px;
-        background: #0F172A;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .emp-footer .footer-icon span {
-        color: white;
-        font-family: 'Playfair Display', serif;
-        font-weight: 700;
-        font-size: 12px;
     }
     .emp-footer .footer-name {
         font-family: 'Inter', sans-serif;
@@ -418,10 +389,6 @@ st.markdown("""
         display: flex;
         align-items: center;
         justify-content: center;
-        color: white;
-        font-family: 'Playfair Display', serif;
-        font-weight: 700;
-        font-size: 18px;
         box-shadow: 0 4px 12px rgba(4,120,87,0.25);
     }
     .console-engine-title {
@@ -551,6 +518,152 @@ st.markdown("""
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: #FFF; }
     ::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+
+    /* ── Manuscript Preview ── */
+    .preview-section {
+        text-align: center;
+        padding: 4rem 0 2rem 0;
+    }
+    .preview-heading {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #94A3B8;
+        margin-bottom: 2rem;
+    }
+    .preview-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 2.5rem 2.5rem 2rem 2.5rem;
+        text-align: left;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.04);
+        max-width: 640px;
+        margin: 0 auto;
+        position: relative;
+        overflow: hidden;
+    }
+    .preview-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #047857, #059669, #0D9488);
+    }
+    .preview-card-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.58rem;
+        font-weight: 600;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #94A3B8;
+        margin-bottom: 1rem;
+    }
+    .preview-card-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: #0F172A;
+        line-height: 1.3;
+        margin-bottom: 0.4rem;
+    }
+    .preview-card-meta {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.7rem;
+        color: #94A3B8;
+        margin-bottom: 1.2rem;
+    }
+    .preview-card-section-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #0F172A;
+        margin-bottom: 0.5rem;
+    }
+    .preview-card-abstract {
+        font-family: 'Playfair Display', serif;
+        font-size: 0.88rem;
+        color: #475569;
+        line-height: 1.65;
+        margin-bottom: 1.5rem;
+    }
+    .preview-card-findings {
+        background: #F8FAFC;
+        border: 1px solid #F1F5F9;
+        border-radius: 10px;
+        padding: 1rem 1.2rem;
+        margin-bottom: 1.2rem;
+    }
+    .preview-card-findings-title {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #047857;
+        margin-bottom: 0.6rem;
+    }
+    .preview-card-finding {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.78rem;
+        color: #334155;
+        line-height: 1.7;
+        padding-left: 1rem;
+        position: relative;
+        margin-bottom: 0.2rem;
+    }
+    .preview-card-finding::before {
+        content: '→';
+        position: absolute;
+        left: 0;
+        color: #047857;
+        font-weight: 600;
+    }
+    .preview-card-stats {
+        display: flex;
+        gap: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #F1F5F9;
+    }
+    .preview-card-stat {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.7rem;
+        color: #94A3B8;
+    }
+    .preview-card-stat strong {
+        color: #334155;
+        font-weight: 600;
+    }
+
+    /* ── CTA Button ── */
+    .cta-wrap {
+        text-align: center;
+        padding: 2.5rem 0 1rem 0;
+    }
+    .cta-btn {
+        display: inline-block;
+        background: #0F172A;
+        color: #FFFFFF;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        font-size: 0.95rem;
+        padding: 0.85rem 2.5rem;
+        border-radius: 14px;
+        text-decoration: none;
+        transition: all 0.25s ease;
+        cursor: pointer;
+        border: none;
+    }
+    .cta-btn:hover {
+        background: #047857;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(4,120,87,0.2);
+        color: #FFFFFF;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -561,7 +674,14 @@ st.markdown("""
 st.markdown("""
 <div class="nav">
     <div class="logo-group">
-        <div class="logo-icon"><span>E</span></div>
+        <svg viewBox="0 0 100 100" width="40" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/>
+            <path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/>
+            <path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
+            <path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
+            <path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/>
+            <circle cx="85" cy="58" r="4" fill="#0F172A"/>
+        </svg>
         <div class="logo-name">empirica</div>
     </div>
 </div>
@@ -573,15 +693,11 @@ st.markdown("""
 st.markdown("""
 <div class="hero-section">
     <div style="text-align:center; margin-bottom:1.5rem;">
-        <span style="display:inline-block; font-family:'Inter',sans-serif; font-size:0.62rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#94A3B8; border:1px solid #E2E8F0; border-radius:20px; padding:0.4rem 1.2rem;">AI-Powered Research</span>
+        <span style="display:inline-block; font-family:'Inter',sans-serif; font-size:0.62rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#94A3B8; border:1px solid #E2E8F0; border-radius:20px; padding:0.4rem 1.2rem;">Powered by ProdifAI</span>
     </div>
     <h1 class="hero-h1">
         From Hypothesis to<br>Research Paper <span class="accent">in Seconds</span>
     </h1>
-    <p class="hero-p">
-        Type any testable hypothesis and let Empirica craft a structured,
-        citation-ready research paper — powered by AI.
-    </p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -773,7 +889,16 @@ if run_button:
 <div class="console-wrap">
     <div class="console-header">
         <div class="console-header-left">
-            <div class="console-engine-icon">E</div>
+            <div class="console-engine-icon">
+                <svg viewBox="0 0 100 100" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 35 L50 20 L85 35 L50 50 Z" fill="white"/>
+                    <path d="M38 45 V80" stroke="white" stroke-width="10" stroke-linecap="round"/>
+                    <path d="M38 62 H65" stroke="white" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M38 80 H72" stroke="white" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M85 35 V55" stroke="white" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/>
+                    <circle cx="85" cy="58" r="4" fill="white"/>
+                </svg>
+            </div>
             <div>
                 <div class="console-engine-title">Empirica Engine v4.3</div>
                 <div class="console-engine-hyp">Analyzing: "{hyp_short}"</div>
@@ -881,17 +1006,55 @@ if not run_button or not hypothesis.strip():
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Manuscript Preview ──
+    st.markdown("""
+    <div class="preview-section">
+        <div class="preview-heading">See what Empirica generates</div>
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# FOOTER
+        <div class="preview-card">
+            <div class="preview-card-label">Generated Research Paper</div>
+            <div class="preview-card-title">The Impact of Electricity Access on GDP Per Capita: A Cross-Country Analysis</div>
+            <div class="preview-card-meta">Empirica AI · 2026</div>
+
+            <div class="preview-card-section-label">Abstract</div>
+            <div class="preview-card-abstract">
+                This paper investigates the causal relationship between electricity access and economic output measured by GDP per capita across 142 countries from 1990 to 2023. Using panel data analysis with instrumental variable estimation, we find that a 10 percentage point increase in electricity access is associated with a 4.2% increase in GDP per capita, controlling for institutional quality, education, and trade openness…
+            </div>
+
+            <div class="preview-card-findings">
+                <div class="preview-card-findings-title">Key Findings</div>
+                <div class="preview-card-finding">Strong positive correlation (r = 0.78) between electricity access and GDP per capita</div>
+                <div class="preview-card-finding">Effect is strongest in Sub-Saharan Africa and South Asia</div>
+                <div class="preview-card-finding">Industrial electricity access has 2.3x the impact of residential access alone</div>
+            </div>
+
+            <div class="preview-card-stats">
+                <div class="preview-card-stat"><strong>12</strong> citations</div>
+                <div class="preview-card-stat"><strong>3,200</strong> words</div>
+                <div class="preview-card-stat"><strong>8 sec</strong> generated</div>
+            </div>
+        </div>
+
+        <div class="cta-wrap">
+            <a href="#" class="cta-btn" onclick="window.scrollTo({top:0,behavior:'smooth'}); return false;">Try Empirica Free ↑</a>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="emp-footer">
     <div class="footer-logo">
-        <div class="footer-icon"><span>E</span></div>
+        <svg viewBox="0 0 100 100" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/>
+            <path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/>
+            <path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
+            <path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
+            <path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/>
+            <circle cx="85" cy="58" r="4" fill="#0F172A"/>
+        </svg>
         <span class="footer-name">empirica</span>
     </div>
     <div class="footer-by">Powered by ProdifAI</div>
-    <div class="footer-copy">© 2025. Academic research engine.</div>
+    <div class="footer-copy">&copy; 2025. Academic research engine.</div>
 </div>
 """, unsafe_allow_html=True)
