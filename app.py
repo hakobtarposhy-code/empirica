@@ -32,6 +32,8 @@ st.markdown("""
         max-width: 800px;
         padding-top: 2rem;
         padding-bottom: 2rem;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
 
     /* ── Hide Streamlit chrome ── */
@@ -76,11 +78,11 @@ st.markdown("""
     .hero-section { text-align: center; padding: 0.5rem 0 2rem 0; }
     .hero-h1 {
         font-family: 'Playfair Display', serif;
-        font-size: 4.2rem;
+        font-size: 3.6rem;
         font-weight: 500;
         color: #0F172A;
         letter-spacing: -0.025em;
-        line-height: 1.1;
+        line-height: 1.12;
         margin: 0 0 2rem 0;
     }
     .hero-h1 .accent {
@@ -387,6 +389,164 @@ st.markdown("""
         margin: 0 auto;
     }
 
+    /* ── Research Console ── */
+    .console-wrap {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.06);
+        margin: 1rem 0;
+    }
+    .console-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.2rem 1.5rem;
+        background: #F8FAFC;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .console-header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .console-engine-icon {
+        width: 40px; height: 40px;
+        background: #047857;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        font-size: 18px;
+        box-shadow: 0 4px 12px rgba(4,120,87,0.25);
+    }
+    .console-engine-title {
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #0F172A;
+    }
+    .console-engine-hyp {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.6rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #94A3B8;
+    }
+    .console-body {
+        padding: 2rem 1.5rem;
+    }
+
+    /* Progress inside console */
+    .console-step-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 0.6rem;
+    }
+    .console-step-text {
+        font-family: 'Playfair Display', serif;
+        font-style: italic;
+        font-size: 0.9rem;
+        color: #334155;
+    }
+    .console-step-pct {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #047857;
+    }
+
+    /* Economic fact card */
+    .fact-card {
+        background: #F8FAFC;
+        border: 1px solid #F1F5F9;
+        border-radius: 16px;
+        padding: 1.3rem 1.5rem;
+        margin-top: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .fact-card::after {
+        content: '"';
+        position: absolute;
+        top: -10px;
+        right: 16px;
+        font-family: 'Playfair Display', serif;
+        font-size: 80px;
+        color: #F1F5F9;
+        line-height: 1;
+    }
+    .fact-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #047857;
+        margin-bottom: 0.5rem;
+    }
+    .fact-text {
+        font-family: 'Playfair Display', serif;
+        font-style: italic;
+        font-size: 0.88rem;
+        color: #475569;
+        line-height: 1.55;
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Spinner line */
+    .console-spinner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+    }
+    .console-spinner-text {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #94A3B8;
+    }
+    .console-spinner-dot {
+        display: inline-block;
+        width: 6px; height: 6px;
+        background: #94A3B8;
+        border-radius: 50%;
+        animation: console-pulse 1.4s ease-in-out infinite;
+    }
+    .console-spinner-dot:nth-child(2) { animation-delay: 0.2s; }
+    .console-spinner-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes console-pulse {
+        0%, 100% { opacity: 0.2; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* ── Detail readout (inside console) ── */
+    .console-details {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.73rem;
+        color: #64748B;
+        line-height: 1.9;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #F1F5F9;
+    }
+    .console-details strong {
+        color: #334155;
+        font-weight: 600;
+    }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: #FFF; }
@@ -412,13 +572,15 @@ st.markdown("""
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="hero-section">
+    <div style="text-align:center; margin-bottom:1.5rem;">
+        <span style="display:inline-block; font-family:'Inter',sans-serif; font-size:0.62rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#94A3B8; border:1px solid #E2E8F0; border-radius:20px; padding:0.4rem 1.2rem;">AI-Powered Research</span>
+    </div>
     <h1 class="hero-h1">
-        Research,<br><span class="accent">automated.</span>
+        From Hypothesis to<br>Research Paper <span class="accent">in Seconds</span>
     </h1>
     <p class="hero-p">
-        Turn a single hypothesis into a rigorous, data-backed paper.
-        Empirica synthesizes datasets, runs regressions, and drafts
-        your manuscript instantly.
+        Type any testable hypothesis and let Empirica craft a structured,
+        citation-ready research paper — powered by AI.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -477,7 +639,7 @@ run_button = st.button("Draft Paper →", type="primary", use_container_width=Tr
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STAGES
+# STAGES + CONSOLE LABELS
 # ═══════════════════════════════════════════════════════════════════════════════
 STAGES = [
     ("01", "Parsing hypothesis", "Mapping to World Bank indicator codes"),
@@ -490,6 +652,31 @@ STAGES = [
     ("08", "Writing paper", "Abstract through conclusion"),
     ("09", "Proofreading", "Tightening prose, verifying claims"),
     ("10", "Assembling document", "Tables, figures, references"),
+]
+
+# Fancy console step descriptions
+CONSOLE_STEPS = [
+    "Decomposing hypothesis into testable variables...",
+    "Pulling cross-country panel data from World Bank API...",
+    "Scrubbing Semantic Scholar for latent variables...",
+    "Running data quality diagnostics...",
+    "Estimating OLS with controls and country fixed effects...",
+    "Rendering scatterplots and coefficient plots...",
+    "Calibrating effect size and confidence intervals...",
+    "Synthesizing manuscript sections from statistical output...",
+    "Applying McCloskey proofreading rules...",
+    "Finalizing document structure and references...",
+]
+
+ECONOMIC_FACTS = [
+    "Goodhart's Law: When a measure becomes a target, it ceases to be a good measure.",
+    "The Lucas Critique argues it is naive to predict the effects of a policy change entirely on the basis of historical data.",
+    "The Easterlin Paradox: High income correlates with happiness within a country, but not necessarily across countries over time.",
+    "The Resource Curse suggests that countries with abundant natural resources tend to have less economic growth and worse governance.",
+    "Okun's Law estimates that for every 1% increase in unemployment, GDP falls by roughly 2%.",
+    "The Mundell-Fleming Trilemma: a country cannot simultaneously maintain a fixed exchange rate, free capital movement, and independent monetary policy.",
+    "Coase's Theorem: if property rights are well-defined and transaction costs are zero, bargaining will lead to an efficient outcome regardless of the initial allocation.",
+    "The Heckscher-Ohlin Model predicts that countries export goods that use their abundant factors of production intensively.",
 ]
 
 def detect_stage(log_text):
@@ -536,10 +723,9 @@ if run_button:
         st.error(f"Import error: {e}")
         st.stop()
 
-    st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
-    progress_bar = st.progress(0)
-    stage_box = st.empty()
-    detail_box = st.empty()
+    # Research Console container
+    console_container = st.empty()
+    detail_container = st.empty()
 
     old_stdout = sys.stdout
     sys.stdout = captured = io.StringIO()
@@ -557,41 +743,75 @@ if run_button:
     thread.start()
 
     prev_stage = -1
+    hyp_short = hypothesis[:50] + "..." if len(hypothesis) > 50 else hypothesis
+
     while not result_box["done"]:
-        time.sleep(0.4)
+        time.sleep(0.5)
         log = captured.getvalue()
         stage = detect_stage(log)
-        if stage >= 0 and stage != prev_stage:
+        if stage < 0:
+            stage = 0
+
+        if stage != prev_stage:
             prev_stage = stage
-            progress_bar.progress((stage + 1) / len(STAGES))
-            num, name, desc = STAGES[stage]
-            stage_box.markdown(
-                f'<div class="stage-card">'
-                f'<div class="stage-num">Stage {num} of {len(STAGES)}</div>'
-                f'<div class="stage-name">{name}</div>'
-                f'<div class="stage-desc">{desc}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+
+        pct = int(((stage + 1) / len(STAGES)) * 100)
+        step_text = CONSOLE_STEPS[min(stage, len(CONSOLE_STEPS) - 1)]
+        fact = ECONOMIC_FACTS[stage % len(ECONOMIC_FACTS)]
+
         details = extract_details(log)
+        detail_html = ""
         if details:
             parts = []
-            for k, label in [("x","X"), ("y","Y"), ("data","Data"), ("lit","Literature")]:
+            for k, label in [("x", "X"), ("y", "Y"), ("data", "Data"), ("lit", "Literature")]:
                 if k in details:
                     parts.append(f"<strong>{label}:</strong> {details[k]}")
             if parts:
-                detail_box.markdown(
-                    f'<div class="detail-readout">{"<br>".join(parts)}</div>',
-                    unsafe_allow_html=True,
-                )
+                detail_html = f'<div class="console-details">{"<br>".join(parts)}</div>'
+
+        console_container.markdown(f"""
+<div class="console-wrap">
+    <div class="console-header">
+        <div class="console-header-left">
+            <div class="console-engine-icon">E</div>
+            <div>
+                <div class="console-engine-title">Empirica Engine v4.3</div>
+                <div class="console-engine-hyp">Analyzing: "{hyp_short}"</div>
+            </div>
+        </div>
+    </div>
+    <div class="console-body">
+        <div class="console-step-row">
+            <div class="console-step-text">{step_text}</div>
+            <div class="console-step-pct">{pct}%</div>
+        </div>
+        <div style="height:6px; width:100%; background:#F1F5F9; border-radius:4px; overflow:hidden;">
+            <div style="height:100%; width:{pct}%; background:linear-gradient(90deg,#047857,#059669); border-radius:4px; transition:width 0.8s ease;"></div>
+        </div>
+
+        <div class="fact-card">
+            <div class="fact-label">💡 Economic Context</div>
+            <div class="fact-text">"{fact}"</div>
+        </div>
+
+        {detail_html}
+
+        <div class="console-spinner">
+            <span class="console-spinner-dot"></span>
+            <span class="console-spinner-dot"></span>
+            <span class="console-spinner-dot"></span>
+            <span class="console-spinner-text">Neural Synthesis in Progress</span>
+        </div>
+    </div>
+</div>
+        """, unsafe_allow_html=True)
 
     thread.join()
     sys.stdout = old_stdout
     log_text = captured.getvalue()
 
-    progress_bar.empty()
-    stage_box.empty()
-    detail_box.empty()
+    console_container.empty()
+    detail_container.empty()
 
     if result_box["error"]:
         st.error(f"Pipeline error: {result_box['error']}")
