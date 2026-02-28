@@ -1081,38 +1081,12 @@ if run_button:
             <div class="progress-fill" style="width:{pct}%;"></div>
         </div>
 
-        <svg class="scatter-anim" width="100%" height="100" viewBox="0 0 300 100">
-            <line class="axis-line" x1="30" y1="90" x2="290" y2="90"/>
-            <line class="axis-line" x1="30" y1="10" x2="30" y2="90"/>
-            <circle class="dot" cx="55" cy="75" r="3.5"/>
-            <circle class="dot" cx="72" cy="68" r="3.5"/>
-            <circle class="dot" cx="90" cy="72" r="3.5"/>
-            <circle class="dot" cx="110" cy="60" r="3.5"/>
-            <circle class="dot" cx="130" cy="55" r="3.5"/>
-            <circle class="dot" cx="148" cy="50" r="3.5"/>
-            <circle class="dot" cx="170" cy="42" r="3.5"/>
-            <circle class="dot" cx="190" cy="38" r="3.5"/>
-            <circle class="dot" cx="210" cy="45" r="3.5"/>
-            <circle class="dot" cx="235" cy="30" r="3.5"/>
-            <circle class="dot" cx="255" cy="25" r="3.5"/>
-            <circle class="dot" cx="275" cy="22" r="3.5"/>
-            <line class="reg-line" x1="45" y1="78" x2="280" y2="20"/>
-        </svg>
-
         <div class="fact-card">
             <div class="fact-label">📖 While you wait</div>
             <div class="fact-text">"{fact}"</div>
         </div>
 
         {detail_html}
-
-        <div class="paper-lines">
-            <div class="paper-line"></div>
-            <div class="paper-line"></div>
-            <div class="paper-line"></div>
-            <div class="paper-line"></div>
-            <div class="paper-line"></div>
-        </div>
 
         <div class="console-spinner">
             <span class="console-spinner-dot"></span>
@@ -1163,15 +1137,6 @@ if run_button:
                     use_container_width=True,
                 )
 
-        scatter = "output/scatterplot.png"
-        coeff = "output/coefficients.png"
-        if os.path.exists(scatter) or os.path.exists(coeff):
-            st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
-            if os.path.exists(scatter):
-                st.image(scatter, use_container_width=True)
-            if os.path.exists(coeff):
-                st.image(coeff, use_container_width=True)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROOF SECTION (only when pipeline hasn't run)
@@ -1215,7 +1180,7 @@ if not run_button or not hypothesis.strip():
 <div class="preview-card-stats">
 <div class="preview-card-stat"><strong>12</strong> citations</div>
 <div class="preview-card-stat"><strong>3,200</strong> words</div>
-<div class="preview-card-stat"><strong>8 sec</strong> generated</div>
+<div class="preview-card-stat"><strong>1m 30s</strong> generated</div>
 </div>
 </div>
 </div>""", unsafe_allow_html=True)
