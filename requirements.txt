@@ -1,9 +1,9 @@
-anthropic
-pandas
+anthropic>=0.80.0
+pandas>=2.0
 numpy
 statsmodels
 scipy
 requests
 python-docx
-matplotlib
-streamlit
+matplotlib>=3.7
+streamlit>=1.30.0
