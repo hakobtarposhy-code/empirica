@@ -398,6 +398,10 @@ st.markdown("""
         justify-content: center;
         box-shadow: 0 4px 14px rgba(0,58,112,0.3);
         animation: icon-breathe 3s ease-in-out infinite;
+        color: white;
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        font-size: 18px;
     }
     @keyframes icon-breathe {
         0%, 100% { box-shadow: 0 4px 14px rgba(0,58,112,0.3); }
@@ -1042,61 +1046,22 @@ if run_button:
             if parts:
                 detail_html = f'<div class="console-details">{"<br>".join(parts)}</div>'
 
-        console_container.markdown(f"""
-<div class="console-wrap">
-    <div class="eq-layer">
-        <span class="eq-float">Y = Xβ + ε</span>
-        <span class="eq-float">R² = 1 − SS_res / SS_tot</span>
-        <span class="eq-float">β̂ = (X'X)⁻¹X'Y</span>
-        <span class="eq-float">Σᵢ (yᵢ − ŷᵢ)²</span>
-        <span class="eq-float">P(F > f) &lt; 0.05</span>
-        <span class="eq-float">Δlog(GDP) = α + βΔX + uᵢₜ</span>
-        <span class="eq-float">E[εᵢ | Xᵢ] = 0</span>
-        <span class="eq-float">plim β̂ = β</span>
-    </div>
-    <div class="console-header">
-        <div class="console-header-left">
-            <div class="console-engine-icon">
-                <svg viewBox="0 0 100 100" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M15 35 L50 20 L85 35 L50 50 Z" fill="white"/>
-                    <path d="M38 45 V80" stroke="white" stroke-width="10" stroke-linecap="round"/>
-                    <path d="M38 62 H65" stroke="white" stroke-width="8" stroke-linecap="round"/>
-                    <path d="M38 80 H72" stroke="white" stroke-width="8" stroke-linecap="round"/>
-                    <path d="M85 35 V55" stroke="white" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/>
-                    <circle cx="85" cy="58" r="4" fill="white"/>
-                </svg>
-            </div>
-            <div>
-                <div class="console-engine-title">Empirica Engine v4.3</div>
-                <div class="console-engine-hyp">Analyzing: "{hyp_short}"</div>
-            </div>
-        </div>
-    </div>
-    <div class="console-body">
-        <div class="console-step-row">
-            <div class="console-step-text">{step_text}</div>
-            <div class="console-step-pct">{pct}%</div>
-        </div>
-        <div class="progress-track">
-            <div class="progress-fill" style="width:{pct}%;"></div>
-        </div>
-
-        <div class="fact-card">
-            <div class="fact-label">📖 While you wait</div>
-            <div class="fact-text">"{fact}"</div>
-        </div>
-
-        {detail_html}
-
-        <div class="console-spinner">
-            <span class="console-spinner-dot"></span>
-            <span class="console-spinner-dot"></span>
-            <span class="console-spinner-dot"></span>
-            <span class="console-spinner-text">Neural Synthesis in Progress</span>
-        </div>
-    </div>
-</div>
-        """, unsafe_allow_html=True)
+        # Build console HTML with NO indentation (Streamlit treats 4-space indent as code)
+        console_html = f'<div class="console-wrap">'
+        console_html += '<div class="console-header"><div class="console-header-left">'
+        console_html += '<div class="console-engine-icon">E</div>'
+        console_html += f'<div><div class="console-engine-title">Empirica Engine v4.3</div>'
+        console_html += f'<div class="console-engine-hyp">Analyzing: &quot;{hyp_short}&quot;</div></div>'
+        console_html += '</div></div>'
+        console_html += '<div class="console-body">'
+        console_html += f'<div class="console-step-row"><div class="console-step-text">{step_text}</div><div class="console-step-pct">{pct}%</div></div>'
+        console_html += f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%;"></div></div>'
+        console_html += f'<div class="fact-card"><div class="fact-label">📖 While you wait</div><div class="fact-text">&ldquo;{fact}&rdquo;</div></div>'
+        if detail_html:
+            console_html += detail_html
+        console_html += '<div class="console-spinner"><span class="console-spinner-dot"></span><span class="console-spinner-dot"></span><span class="console-spinner-dot"></span><span class="console-spinner-text">Neural Synthesis in Progress</span></div>'
+        console_html += '</div></div>'
+        console_container.markdown(console_html, unsafe_allow_html=True)
 
     thread.join()
     sys.stdout = old_stdout
@@ -1185,44 +1150,11 @@ if not run_button or not hypothesis.strip():
 </div>
 </div>""", unsafe_allow_html=True)
 
-    # CTA button with working scroll-to-top
-    import streamlit.components.v1 as components
-    components.html("""
-    <div style="text-align:center; padding:1.5rem 0 0.5rem 0;">
-        <button onclick="window.parent.document.querySelector('section.main').scrollTo({top:0,behavior:'smooth'})"
-            style="
-                background:#0F172A;
-                color:#FFF;
-                font-family:'Inter',sans-serif;
-                font-weight:600;
-                font-size:0.95rem;
-                padding:0.85rem 2.5rem;
-                border-radius:14px;
-                border:none;
-                cursor:pointer;
-                box-shadow:0 4px 14px rgba(0,58,112,0.18);
-                transition:all 0.25s ease;
-            "
-            onmouseover="this.style.background='#003A70';this.style.boxShadow='0 10px 30px rgba(0,58,112,0.25)';this.style.transform='translateY(-2px)'"
-            onmouseout="this.style.background='#0F172A';this.style.boxShadow='0 4px 14px rgba(0,58,112,0.18)';this.style.transform='translateY(0)'"
-        >Try Empirica Free ↑</button>
-    </div>
-    """, height=80)
+    # CTA button — rerun scrolls back to top naturally
+    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
+    cta_col = st.columns([1, 2, 1])
+    with cta_col[1]:
+        if st.button("Try Empirica Free ↑", key="cta_top", use_container_width=True):
+            pass  # clicking reruns the app, which loads at top
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="emp-footer">
-    <div class="footer-logo">
-        <svg viewBox="0 0 100 100" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/>
-            <path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/>
-            <path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
-            <path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/>
-            <path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/>
-            <circle cx="85" cy="58" r="4" fill="#0F172A"/>
-        </svg>
-        <span class="footer-name">empirica</span>
-    </div>
-    <div class="footer-by">Powered by ProdifAI</div>
-    <div class="footer-copy">&copy; 2026. Academic research engine.</div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("""<div class="emp-footer"><div class="footer-logo"><div style="width:28px;height:28px;background:#0F172A;border-radius:5px;display:flex;align-items:center;justify-content:center;color:white;font-family:'Playfair Display',serif;font-weight:700;font-size:14px;">E</div><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdifAI</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
