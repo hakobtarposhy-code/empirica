@@ -71,7 +71,7 @@ st.markdown("""
         margin: 0 0 2rem 0;
     }
     .hero-h1 .accent {
-        color: #047857;
+        color: #1A6EE0;
         font-style: italic;
     }
     .hero-p {
@@ -117,7 +117,7 @@ st.markdown("""
         font-family: 'Playfair Display', serif;
         font-style: italic;
         font-size: 1.05rem;
-        color: #047857;
+        color: #1A6EE0;
     }
     @keyframes reel {
         0%,5%     { transform: translateY(0); }
@@ -144,11 +144,12 @@ st.markdown("""
         padding: 1.3rem 1.4rem !important;
         height: auto !important;
         transition: all 0.25s ease;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.04) !important;
     }
     .stTextInput > div > div > input:focus {
         border-color: #94A3B8 !important;
         background: #FFFFFF !important;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.04) !important;
+        box-shadow: 0 4px 20px rgba(15,23,42,0.06), 0 0 0 3px rgba(0,58,112,0.06) !important;
     }
     .stTextInput > div > div > input::placeholder {
         color: #94A3B8 !important;
@@ -175,16 +176,17 @@ st.markdown("""
         padding: 0.75rem 2rem !important;
         transition: all 0.25s ease !important;
         letter-spacing: -0.01em;
+        box-shadow: 0 4px 14px rgba(0,58,112,0.18) !important;
     }
     .stButton > button:hover {
-        background: #047857 !important;
-        box-shadow: 0 4px 20px rgba(4,120,87,0.18) !important;
+        background: #003A70 !important;
+        box-shadow: 0 8px 28px rgba(0,58,112,0.3) !important;
         transform: translateY(-1px);
     }
 
     /* ── Progress bar ── */
     .stProgress > div > div {
-        background: linear-gradient(90deg, #047857, #059669) !important;
+        background: linear-gradient(90deg, #003A70, #2980D4) !important;
         border-radius: 6px;
     }
     .stProgress > div { background: #F1F5F9 !important; border-radius: 6px; }
@@ -260,8 +262,8 @@ st.markdown("""
         justify-content: center;
         font-size: 18px;
         margin-bottom: 0.8rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        color: #047857;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.06);
+        color: #003A70;
     }
     .proof-title {
         font-family: 'Inter', sans-serif;
@@ -290,11 +292,13 @@ st.markdown("""
         border-radius: 12px !important;
         padding: 0.65rem 1.5rem !important;
         transition: all 0.2s ease !important;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.06) !important;
     }
     .stDownloadButton > button:hover {
-        border-color: #047857 !important;
-        color: #047857 !important;
-        box-shadow: 0 2px 12px rgba(4,120,87,0.08) !important;
+        border-color: #003A70 !important;
+        color: #003A70 !important;
+        box-shadow: 0 6px 20px rgba(0,58,112,0.12) !important;
+        transform: translateY(-1px);
     }
 
     /* ── Expander ── */
@@ -354,9 +358,9 @@ st.markdown("""
     }
 
     /* ── Accent line ── */
-    .emerald-line {
+    .mckinsey-line {
         width: 48px; height: 2px;
-        background: #047857;
+        background: #003A70;
         margin: 0 auto;
     }
 
@@ -366,8 +370,9 @@ st.markdown("""
         border: 1px solid #E2E8F0;
         border-radius: 20px;
         overflow: hidden;
-        box-shadow: 0 25px 60px rgba(0,0,0,0.06);
+        box-shadow: 0 12px 40px rgba(15,23,42,0.08), 0 4px 12px rgba(0,58,112,0.05);
         margin: 1rem 0;
+        position: relative;
     }
     .console-header {
         display: flex;
@@ -376,6 +381,8 @@ st.markdown("""
         padding: 1.2rem 1.5rem;
         background: #F8FAFC;
         border-bottom: 1px solid #F1F5F9;
+        position: relative;
+        z-index: 2;
     }
     .console-header-left {
         display: flex;
@@ -384,12 +391,17 @@ st.markdown("""
     }
     .console-engine-icon {
         width: 40px; height: 40px;
-        background: #047857;
+        background: #003A70;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 4px 12px rgba(4,120,87,0.25);
+        box-shadow: 0 4px 14px rgba(0,58,112,0.3);
+        animation: icon-breathe 3s ease-in-out infinite;
+    }
+    @keyframes icon-breathe {
+        0%, 100% { box-shadow: 0 4px 14px rgba(0,58,112,0.3); }
+        50% { box-shadow: 0 4px 24px rgba(0,58,112,0.5); }
     }
     .console-engine-title {
         font-family: 'Inter', sans-serif;
@@ -407,9 +419,42 @@ st.markdown("""
     }
     .console-body {
         padding: 2rem 1.5rem;
+        position: relative;
+        z-index: 2;
     }
 
-    /* Progress inside console */
+    /* ── Floating equations background ── */
+    .eq-layer {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+        z-index: 1;
+    }
+    .eq-float {
+        position: absolute;
+        font-family: 'Playfair Display', serif;
+        font-style: italic;
+        color: #F1F5F9;
+        white-space: nowrap;
+        animation: eq-drift linear infinite;
+    }
+    .eq-float:nth-child(1)  { font-size: 14px; top: 15%; left: -10%; animation-duration: 22s; animation-delay: 0s; }
+    .eq-float:nth-child(2)  { font-size: 11px; top: 35%; left: -15%; animation-duration: 28s; animation-delay: 3s; }
+    .eq-float:nth-child(3)  { font-size: 16px; top: 55%; left: -20%; animation-duration: 25s; animation-delay: 7s; }
+    .eq-float:nth-child(4)  { font-size: 12px; top: 75%; left: -10%; animation-duration: 20s; animation-delay: 2s; }
+    .eq-float:nth-child(5)  { font-size: 13px; top: 25%; left: -18%; animation-duration: 30s; animation-delay: 10s; }
+    .eq-float:nth-child(6)  { font-size: 10px; top: 65%; left: -12%; animation-duration: 26s; animation-delay: 5s; }
+    .eq-float:nth-child(7)  { font-size: 15px; top: 45%; left: -8%;  animation-duration: 24s; animation-delay: 8s; }
+    .eq-float:nth-child(8)  { font-size: 11px; top: 85%; left: -14%; animation-duration: 27s; animation-delay: 1s; }
+    @keyframes eq-drift {
+        0%   { transform: translateX(0); opacity: 0; }
+        5%   { opacity: 1; }
+        95%  { opacity: 1; }
+        100% { transform: translateX(calc(100vw + 200px)); opacity: 0; }
+    }
+
+    /* ── Progress inside console ── */
     .console-step-row {
         display: flex;
         justify-content: space-between;
@@ -421,15 +466,92 @@ st.markdown("""
         font-style: italic;
         font-size: 0.9rem;
         color: #334155;
+        overflow: hidden;
+        border-right: 2px solid #003A70;
+        animation: typewriter-blink 0.8s step-end infinite;
+    }
+    @keyframes typewriter-blink {
+        50% { border-color: transparent; }
     }
     .console-step-pct {
         font-family: 'Inter', sans-serif;
         font-size: 0.72rem;
         font-weight: 700;
-        color: #047857;
+        color: #003A70;
     }
 
-    /* Economic fact card */
+    /* ── Animated progress bar ── */
+    .progress-track {
+        height: 6px;
+        width: 100%;
+        background: #F1F5F9;
+        border-radius: 4px;
+        overflow: hidden;
+        position: relative;
+    }
+    .progress-fill {
+        height: 100%;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #003A70, #2980D4);
+        transition: width 0.8s ease;
+        position: relative;
+    }
+    .progress-fill::after {
+        content: '';
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: 40px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        animation: shimmer 1.5s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+        0% { transform: translateX(-40px); }
+        100% { transform: translateX(40px); }
+    }
+
+    /* ── Animated scatter SVG ── */
+    .scatter-anim {
+        display: block;
+        margin: 1.2rem auto 0 auto;
+    }
+    .scatter-anim .axis-line {
+        stroke: #CBD5E1;
+        stroke-width: 1.5;
+    }
+    .scatter-anim .reg-line {
+        stroke: #003A70;
+        stroke-width: 2;
+        stroke-dasharray: 200;
+        stroke-dashoffset: 200;
+        animation: draw-line 3s ease forwards;
+    }
+    @keyframes draw-line {
+        to { stroke-dashoffset: 0; }
+    }
+    .scatter-anim .dot {
+        fill: #003A70;
+        opacity: 0;
+        animation: pop-dot 0.4s ease forwards;
+    }
+    .scatter-anim .dot:nth-child(3) { animation-delay: 0.3s; }
+    .scatter-anim .dot:nth-child(4) { animation-delay: 0.6s; }
+    .scatter-anim .dot:nth-child(5) { animation-delay: 0.9s; }
+    .scatter-anim .dot:nth-child(6) { animation-delay: 1.2s; }
+    .scatter-anim .dot:nth-child(7) { animation-delay: 1.5s; }
+    .scatter-anim .dot:nth-child(8) { animation-delay: 1.8s; }
+    .scatter-anim .dot:nth-child(9) { animation-delay: 2.1s; }
+    .scatter-anim .dot:nth-child(10) { animation-delay: 2.4s; }
+    .scatter-anim .dot:nth-child(11) { animation-delay: 2.7s; }
+    .scatter-anim .dot:nth-child(12) { animation-delay: 3.0s; }
+    .scatter-anim .dot:nth-child(13) { animation-delay: 3.3s; }
+    .scatter-anim .dot:nth-child(14) { animation-delay: 3.6s; }
+    @keyframes pop-dot {
+        0%  { opacity: 0; r: 0; }
+        70% { opacity: 1; r: 4.5; }
+        100% { opacity: 0.7; r: 3.5; }
+    }
+
+    /* ── Economic fact card ── */
     .fact-card {
         background: #F8FAFC;
         border: 1px solid #F1F5F9;
@@ -438,15 +560,21 @@ st.markdown("""
         margin-top: 1.5rem;
         position: relative;
         overflow: hidden;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.04);
+        animation: fact-slide-in 0.6s ease;
+    }
+    @keyframes fact-slide-in {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
     .fact-card::after {
-        content: '"';
+        content: '\201C';
         position: absolute;
         top: -10px;
         right: 16px;
         font-family: 'Playfair Display', serif;
         font-size: 80px;
-        color: #F1F5F9;
+        color: #E8EDF3;
         line-height: 1;
     }
     .fact-label {
@@ -455,7 +583,7 @@ st.markdown("""
         font-weight: 700;
         letter-spacing: 0.18em;
         text-transform: uppercase;
-        color: #047857;
+        color: #003A70;
         margin-bottom: 0.5rem;
     }
     .fact-text {
@@ -468,7 +596,7 @@ st.markdown("""
         z-index: 1;
     }
 
-    /* Spinner line */
+    /* ── Console spinner ── */
     .console-spinner {
         display: flex;
         align-items: center;
@@ -488,7 +616,7 @@ st.markdown("""
     .console-spinner-dot {
         display: inline-block;
         width: 6px; height: 6px;
-        background: #94A3B8;
+        background: #003A70;
         border-radius: 50%;
         animation: console-pulse 1.4s ease-in-out infinite;
     }
@@ -512,6 +640,33 @@ st.markdown("""
     .console-details strong {
         color: #334155;
         font-weight: 600;
+    }
+
+    /* ── Paper lines animation ── */
+    .paper-lines {
+        margin-top: 1rem;
+        padding: 0.8rem 1rem;
+        background: #FDFDFD;
+        border: 1px solid #F1F5F9;
+        border-radius: 8px;
+    }
+    .paper-line {
+        height: 4px;
+        background: #F1F5F9;
+        border-radius: 2px;
+        margin-bottom: 6px;
+        animation: line-fill 2s ease forwards;
+        transform-origin: left;
+    }
+    .paper-line:nth-child(1) { width: 85%; animation-delay: 0.0s; }
+    .paper-line:nth-child(2) { width: 92%; animation-delay: 0.3s; }
+    .paper-line:nth-child(3) { width: 78%; animation-delay: 0.6s; }
+    .paper-line:nth-child(4) { width: 65%; animation-delay: 0.9s; }
+    .paper-line:nth-child(5) { width: 88%; animation-delay: 1.2s; }
+    @keyframes line-fill {
+        0%  { background: #F1F5F9; transform: scaleX(0); }
+        50% { background: #D4E2F3; transform: scaleX(1); }
+        100% { background: #F1F5F9; transform: scaleX(1); }
     }
 
     /* ── Scrollbar ── */
@@ -539,7 +694,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 2.5rem 2.5rem 2rem 2.5rem;
         text-align: left;
-        box-shadow: 0 25px 60px rgba(0,0,0,0.04);
+        box-shadow: 0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(0,58,112,0.04);
         max-width: 640px;
         margin: 0 auto;
         position: relative;
@@ -550,7 +705,7 @@ st.markdown("""
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 3px;
-        background: linear-gradient(90deg, #047857, #059669, #0D9488);
+        background: linear-gradient(90deg, #003A70, #2980D4, #4A9BE8);
     }
     .preview-card-label {
         font-family: 'Inter', sans-serif;
@@ -597,6 +752,7 @@ st.markdown("""
         border-radius: 10px;
         padding: 1rem 1.2rem;
         margin-bottom: 1.2rem;
+        box-shadow: 0 2px 6px rgba(15,23,42,0.03);
     }
     .preview-card-findings-title {
         font-family: 'Inter', sans-serif;
@@ -604,7 +760,7 @@ st.markdown("""
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: #047857;
+        color: #003A70;
         margin-bottom: 0.6rem;
     }
     .preview-card-finding {
@@ -620,7 +776,7 @@ st.markdown("""
         content: '→';
         position: absolute;
         left: 0;
-        color: #047857;
+        color: #003A70;
         font-weight: 600;
     }
     .preview-card-stats {
@@ -657,11 +813,12 @@ st.markdown("""
         transition: all 0.25s ease;
         cursor: pointer;
         border: none;
+        box-shadow: 0 4px 14px rgba(0,58,112,0.18);
     }
     .cta-btn:hover {
-        background: #047857;
+        background: #003A70;
         transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(4,120,87,0.2);
+        box-shadow: 0 10px 30px rgba(0,58,112,0.25);
         color: #FFFFFF;
     }
 </style>
@@ -887,6 +1044,16 @@ if run_button:
 
         console_container.markdown(f"""
 <div class="console-wrap">
+    <div class="eq-layer">
+        <span class="eq-float">Y = Xβ + ε</span>
+        <span class="eq-float">R² = 1 − SS_res / SS_tot</span>
+        <span class="eq-float">β̂ = (X'X)⁻¹X'Y</span>
+        <span class="eq-float">Σᵢ (yᵢ − ŷᵢ)²</span>
+        <span class="eq-float">P(F > f) &lt; 0.05</span>
+        <span class="eq-float">Δlog(GDP) = α + βΔX + uᵢₜ</span>
+        <span class="eq-float">E[εᵢ | Xᵢ] = 0</span>
+        <span class="eq-float">plim β̂ = β</span>
+    </div>
     <div class="console-header">
         <div class="console-header-left">
             <div class="console-engine-icon">
@@ -910,16 +1077,42 @@ if run_button:
             <div class="console-step-text">{step_text}</div>
             <div class="console-step-pct">{pct}%</div>
         </div>
-        <div style="height:6px; width:100%; background:#F1F5F9; border-radius:4px; overflow:hidden;">
-            <div style="height:100%; width:{pct}%; background:linear-gradient(90deg,#047857,#059669); border-radius:4px; transition:width 0.8s ease;"></div>
+        <div class="progress-track">
+            <div class="progress-fill" style="width:{pct}%;"></div>
         </div>
 
+        <svg class="scatter-anim" width="100%" height="100" viewBox="0 0 300 100">
+            <line class="axis-line" x1="30" y1="90" x2="290" y2="90"/>
+            <line class="axis-line" x1="30" y1="10" x2="30" y2="90"/>
+            <circle class="dot" cx="55" cy="75" r="3.5"/>
+            <circle class="dot" cx="72" cy="68" r="3.5"/>
+            <circle class="dot" cx="90" cy="72" r="3.5"/>
+            <circle class="dot" cx="110" cy="60" r="3.5"/>
+            <circle class="dot" cx="130" cy="55" r="3.5"/>
+            <circle class="dot" cx="148" cy="50" r="3.5"/>
+            <circle class="dot" cx="170" cy="42" r="3.5"/>
+            <circle class="dot" cx="190" cy="38" r="3.5"/>
+            <circle class="dot" cx="210" cy="45" r="3.5"/>
+            <circle class="dot" cx="235" cy="30" r="3.5"/>
+            <circle class="dot" cx="255" cy="25" r="3.5"/>
+            <circle class="dot" cx="275" cy="22" r="3.5"/>
+            <line class="reg-line" x1="45" y1="78" x2="280" y2="20"/>
+        </svg>
+
         <div class="fact-card">
-            <div class="fact-label">💡 Economic Context</div>
+            <div class="fact-label">📖 While you wait</div>
             <div class="fact-text">"{fact}"</div>
         </div>
 
         {detail_html}
+
+        <div class="paper-lines">
+            <div class="paper-line"></div>
+            <div class="paper-line"></div>
+            <div class="paper-line"></div>
+            <div class="paper-line"></div>
+            <div class="paper-line"></div>
+        </div>
 
         <div class="console-spinner">
             <span class="console-spinner-dot"></span>
@@ -984,62 +1177,55 @@ if run_button:
 # PROOF SECTION (only when pipeline hasn't run)
 # ═══════════════════════════════════════════════════════════════════════════════
 if not run_button or not hypothesis.strip():
-    st.markdown("""
-    <div class="proof-section">
-        <div class="proof-grid">
-            <div class="proof-item">
-                <div class="proof-icon">📐</div>
-                <div class="proof-title">Causal Modeling</div>
-                <div class="proof-desc">Automated IV selection and robustness checks powered by global econometric databases.</div>
-            </div>
-            <div class="proof-item">
-                <div class="proof-icon">📝</div>
-                <div class="proof-title">Full Manuscripts</div>
-                <div class="proof-desc">Intro, Lit Review, and Conclusion drafted in academic tone with reproducible code.</div>
-            </div>
-            <div class="proof-item">
-                <div class="proof-icon">🔗</div>
-                <div class="proof-title">Verified Citations</div>
-                <div class="proof-desc">Direct links to sources across PubMed, SSRN, and Semantic Scholar.</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div class="proof-section">
+<div class="proof-grid">
+<div class="proof-item">
+<div class="proof-icon">📐</div>
+<div class="proof-title">Causal Modeling</div>
+<div class="proof-desc">Automated IV selection and robustness checks powered by global econometric databases.</div>
+</div>
+<div class="proof-item">
+<div class="proof-icon">📝</div>
+<div class="proof-title">Full Manuscripts</div>
+<div class="proof-desc">Intro, Lit Review, and Conclusion drafted in academic tone with reproducible code.</div>
+</div>
+<div class="proof-item">
+<div class="proof-icon">🔗</div>
+<div class="proof-title">Verified Citations</div>
+<div class="proof-desc">Direct links to sources across PubMed, SSRN, and Semantic Scholar.</div>
+</div>
+</div>
+</div>""", unsafe_allow_html=True)
 
     # ── Manuscript Preview ──
-    st.markdown("""
-    <div class="preview-section">
-        <div class="preview-heading">See what Empirica generates</div>
+    st.markdown("""<div class="preview-section">
+<div class="preview-heading">See what Empirica generates</div>
+<div class="preview-card">
+<div class="preview-card-label">Generated Research Paper</div>
+<div class="preview-card-title">The Impact of Electricity Access on GDP Per Capita: A Cross-Country Analysis</div>
+<div class="preview-card-meta">Empirica AI · 2026</div>
+<div class="preview-card-section-label">Abstract</div>
+<div class="preview-card-abstract">This paper investigates the causal relationship between electricity access and economic output measured by GDP per capita across 142 countries from 1990 to 2023. Using panel data analysis with instrumental variable estimation, we find that a 10 percentage point increase in electricity access is associated with a 4.2% increase in GDP per capita, controlling for institutional quality, education, and trade openness…</div>
+<div class="preview-card-findings">
+<div class="preview-card-findings-title">Key Findings</div>
+<div class="preview-card-finding">Strong positive correlation (r = 0.78) between electricity access and GDP per capita</div>
+<div class="preview-card-finding">Effect is strongest in Sub-Saharan Africa and South Asia</div>
+<div class="preview-card-finding">Industrial electricity access has 2.3x the impact of residential access alone</div>
+</div>
+<div class="preview-card-stats">
+<div class="preview-card-stat"><strong>12</strong> citations</div>
+<div class="preview-card-stat"><strong>3,200</strong> words</div>
+<div class="preview-card-stat"><strong>8 sec</strong> generated</div>
+</div>
+</div>
+</div>""", unsafe_allow_html=True)
 
-        <div class="preview-card">
-            <div class="preview-card-label">Generated Research Paper</div>
-            <div class="preview-card-title">The Impact of Electricity Access on GDP Per Capita: A Cross-Country Analysis</div>
-            <div class="preview-card-meta">Empirica AI · 2026</div>
-
-            <div class="preview-card-section-label">Abstract</div>
-            <div class="preview-card-abstract">
-                This paper investigates the causal relationship between electricity access and economic output measured by GDP per capita across 142 countries from 1990 to 2023. Using panel data analysis with instrumental variable estimation, we find that a 10 percentage point increase in electricity access is associated with a 4.2% increase in GDP per capita, controlling for institutional quality, education, and trade openness…
-            </div>
-
-            <div class="preview-card-findings">
-                <div class="preview-card-findings-title">Key Findings</div>
-                <div class="preview-card-finding">Strong positive correlation (r = 0.78) between electricity access and GDP per capita</div>
-                <div class="preview-card-finding">Effect is strongest in Sub-Saharan Africa and South Asia</div>
-                <div class="preview-card-finding">Industrial electricity access has 2.3x the impact of residential access alone</div>
-            </div>
-
-            <div class="preview-card-stats">
-                <div class="preview-card-stat"><strong>12</strong> citations</div>
-                <div class="preview-card-stat"><strong>3,200</strong> words</div>
-                <div class="preview-card-stat"><strong>8 sec</strong> generated</div>
-            </div>
-        </div>
-
-        <div class="cta-wrap">
-            <a href="#" class="cta-btn" onclick="window.scrollTo({top:0,behavior:'smooth'}); return false;">Try Empirica Free ↑</a>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # CTA button via Streamlit native button (HTML onclick doesn't work in Streamlit)
+    st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
+    cta_cols = st.columns([1, 2, 1])
+    with cta_cols[1]:
+        if st.button("Try Empirica Free ↑", key="cta_scroll", use_container_width=True):
+            st.rerun()
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="emp-footer">
@@ -1055,6 +1241,6 @@ st.markdown("""
         <span class="footer-name">empirica</span>
     </div>
     <div class="footer-by">Powered by ProdifAI</div>
-    <div class="footer-copy">&copy; 2025. Academic research engine.</div>
+    <div class="footer-copy">&copy; 2026. Academic research engine.</div>
 </div>
 """, unsafe_allow_html=True)
