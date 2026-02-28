@@ -103,13 +103,137 @@ def strip_markdown(text: str) -> str:
 
 
 # ============================================================================
-# TAUTOLOGY GUARD (v4.1)
+# TAUTOLOGY GUARD (v4.2 — dynamic)
 # ============================================================================
 def check_tautology(x_code: str, y_code: str) -> bool:
+    """Check if X and Y are from the same indicator family."""
+    if x_code == y_code:
+        return True
+    # Check hardcoded families
     for prefix in INDICATOR_FAMILIES:
         if x_code.startswith(prefix) and y_code.startswith(prefix):
             return True
-    return x_code == y_code
+    # Dynamic check: if the first two segments match (e.g., SI.POV.xxx and SI.POV.yyy)
+    x_parts = x_code.split(".")
+    y_parts = y_code.split(".")
+    if len(x_parts) >= 2 and len(y_parts) >= 2:
+        if x_parts[0] == y_parts[0] and x_parts[1] == y_parts[1]:
+            return True
+    return False
+
+
+# ============================================================================
+# INDICATOR VALIDATION (v4.2 — new)
+# ============================================================================
+def validate_indicator(indicator: str) -> dict:
+    """Check if a World Bank indicator exists and has data. Returns info dict or None."""
+    try:
+        resp = requests.get(
+            f"https://api.worldbank.org/v2/indicator/{indicator}?format=json",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if len(data) >= 2 and data[1]:
+            info = data[1][0]
+            return {
+                "id": info.get("id", ""),
+                "name": info.get("name", ""),
+                "source": info.get("source", {}).get("value", ""),
+            }
+    except Exception:
+        pass
+    return None
+
+
+def check_data_availability(indicator: str, start_year: int = 2000, end_year: int = 2023) -> int:
+    """Quick check: how many data points does this indicator have? Returns count."""
+    try:
+        resp = requests.get(
+            f"https://api.worldbank.org/v2/country/all/indicator/{indicator}"
+            f"?date={start_year}:{end_year}&format=json&per_page=1&page=1",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if len(data) >= 1 and isinstance(data[0], dict):
+            return data[0].get("total", 0)
+    except Exception:
+        pass
+    return 0
+
+
+def search_wb_indicators(keyword: str, max_results: int = 5) -> list:
+    """Search World Bank for indicators matching a keyword."""
+    try:
+        resp = requests.get(
+            f"https://api.worldbank.org/v2/indicator?format=json&per_page=100",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if len(data) < 2 or not data[1]:
+            return []
+        # Filter by keyword in name
+        kw = keyword.lower()
+        matches = []
+        for ind in data[1]:
+            name = ind.get("name", "").lower()
+            if kw in name:
+                matches.append({
+                    "code": ind["id"],
+                    "name": ind["name"],
+                })
+        return matches[:max_results]
+    except Exception:
+        return []
+
+
+def validate_and_fix_indicators(plan: dict) -> dict:
+    """Validate all indicators in the plan and fix any that are invalid or sparse."""
+    print("  🔍 Validating indicators...")
+
+    for var_key, label_key in [("independent_var", "x_label"), ("dependent_var", "y_label")]:
+        code = plan[var_key]
+        info = validate_indicator(code)
+
+        if not info:
+            print(f"    ⚠️  {code} does not exist in World Bank!")
+            # Ask Claude to suggest an alternative
+            alt = ask_claude_json(
+                system="You are a World Bank data expert. Suggest a VALID World Bank indicator code. Return JSON: {\"code\": \"XX.XXX.XXX\", \"name\": \"description\"}",
+                user=f"The indicator {code} ({plan[label_key]}) does not exist. Suggest a valid alternative that measures the same concept.",
+            )
+            plan[var_key] = alt.get("code", code)
+            plan[label_key] = alt.get("name", plan[label_key])
+            print(f"    ✅ Replaced with: {plan[var_key]} ({plan[label_key]})")
+        else:
+            # Check data availability
+            count = check_data_availability(code, plan.get("start_year", 2000), plan.get("end_year", 2023))
+            if count < 200:
+                print(f"    ⚠️  {code} has very sparse data ({count} points). Asking AI for denser alternative...")
+                alt = ask_claude_json(
+                    system="""You are a World Bank data expert. The user needs an indicator with GOOD data coverage (most countries, most years).
+Suggest a VALID World Bank indicator that measures the same concept but has better data availability.
+Common well-populated indicators include:
+- NY.GDP.PCAP.PP.KD, NY.GDP.MKTP.KD.ZG, SP.DYN.LE00.IN, SP.DYN.IMRT.IN
+- SE.XPD.TOTL.GD.ZS, SH.XPD.CHEX.GD.ZS, IT.NET.USER.ZS, SP.URB.TOTL.IN.ZS
+- SL.UEM.TOTL.ZS, FP.CPI.TOTL.ZG, SP.POP.GROW, EG.ELC.ACCS.ZS
+Return JSON: {"code": "XX.XXX.XXX", "name": "description", "reasoning": "why this is better"}""",
+                    user=f"Indicator {code} ({plan[label_key]}) has only {count} data points (very sparse). I need something that measures '{plan[label_key]}' but with much better coverage across countries and years.",
+                )
+                new_code = alt.get("code", code)
+                new_count = check_data_availability(new_code, plan.get("start_year", 2000), plan.get("end_year", 2023))
+                if new_count > count:
+                    plan[var_key] = new_code
+                    plan[label_key] = alt.get("name", plan[label_key])
+                    print(f"    ✅ Switched to: {new_code} ({plan[label_key]}) — {new_count} data points")
+                else:
+                    print(f"    ℹ️  Keeping {code} — alternative wasn't better")
+            else:
+                print(f"    ✅ {code} — {count} data points (good)")
+
+    return plan
 
 
 # ============================================================================
@@ -119,41 +243,34 @@ def ai_parse_hypothesis(hypothesis_text: str) -> dict:
     print("\n🧠 AGENT 1: Parsing hypothesis with AI...")
 
     plan = ask_claude_json(
-        system="""You are a research methodology expert. Given a hypothesis, pick World Bank indicators.
+        system="""You are a research methodology expert with deep knowledge of the World Bank's data catalog (16,000+ indicators).
+
+Given a hypothesis, pick the BEST World Bank indicator codes for X (cause) and Y (effect).
 
 CRITICAL RULES:
-1. X and Y MUST be from DIFFERENT domains (e.g., health spending -> life expectancy, NOT GDP growth -> GDP per capita growth)
-2. NEVER pick two GDP indicators, two health indicators, or two education indicators as X and Y
-3. The relationship must be CAUSAL/INTERESTING, not an accounting identity
-4. Pick 2-4 control variables that are CONFOUNDERS (affect both X and Y)
+1. X and Y MUST be from DIFFERENT domains — never two GDP indicators, two health indicators, etc.
+2. The relationship must be CAUSAL/INTERESTING, not an accounting identity
+3. PREFER indicators with GOOD data coverage — most countries, most years (2000-2023)
+4. Pick 2-4 control variables that are CONFOUNDERS
+5. You know thousands of World Bank indicator codes from your training — use ANY valid one
 
-World Bank indicators:
-ECONOMIC:
-- NY.GDP.PCAP.PP.KD = GDP per capita (PPP, constant 2017 $)
-- NY.GDP.PCAP.KD.ZG = GDP per capita growth (annual %)
-- FP.CPI.TOTL.ZG = Inflation (annual %)
-- SL.UEM.TOTL.ZS = Unemployment (%)
+WELL-POPULATED indicators (prefer these when possible):
+GDP: NY.GDP.PCAP.PP.KD, NY.GDP.MKTP.KD.ZG, NY.GDP.PCAP.KD.ZG
+Trade: NE.EXP.GNFS.ZS, NE.IMP.GNFS.ZS, TG.VAL.TOTL.GD.ZS
+Finance: FP.CPI.TOTL.ZG, FM.LBL.BMNY.GD.ZS, BX.KLT.DINV.WD.GD.ZS
+Education: SE.XPD.TOTL.GD.ZS, SE.SEC.ENRR, SE.TER.ENRR, SE.PRM.ENRR
+Health: SH.XPD.CHEX.GD.ZS, SP.DYN.LE00.IN, SP.DYN.IMRT.IN, SH.MED.PHYS.ZS
+Infrastructure: IT.NET.USER.ZS, EG.ELC.ACCS.ZS, IT.CEL.SETS.P2
+Demographics: SP.URB.TOTL.IN.ZS, SP.POP.GROW, SP.DYN.TFRT.IN
+Labor: SL.UEM.TOTL.ZS, SL.TLF.CACT.ZS, SL.AGR.EMPL.ZS
+Governance: GE.EST, CC.EST, RL.EST, VA.EST
+Environment: EN.ATM.CO2E.PC, EG.USE.ELEC.KH.PC, AG.LND.FRST.ZS
+Poverty: SI.POV.DDAY (note: SI.POV.GINI has VERY sparse data — avoid it)
+Water/Sanitation: SH.H2O.SMDW.ZS, SH.STA.SMSS.ZS
 
-EDUCATION:
-- SE.XPD.TOTL.GD.ZS = Education expenditure (% of GDP)
-- SE.SEC.ENRR = Secondary school enrollment (% gross)
-- SE.TER.ENRR = Tertiary enrollment (% gross)
-
-HEALTH:
-- SH.XPD.CHEX.GD.ZS = Health expenditure (% of GDP)
-- SP.DYN.LE00.IN = Life expectancy (years)
-- SP.DYN.IMRT.IN = Infant mortality rate (per 1,000)
-- SH.MED.PHYS.ZS = Physicians (per 1,000 people)
-
-INFRASTRUCTURE & GOVERNANCE:
-- IT.NET.USER.ZS = Internet users (% of population)
-- EG.ELC.ACCS.ZS = Access to electricity (%)
-- SP.URB.TOTL.IN.ZS = Urban population (%)
-- GE.EST = Government effectiveness
-
-INEQUALITY:
-- SI.POV.GINI = Gini index
-- SP.POP.GROW = Population growth (%)
+But you are NOT limited to this list. Use any valid World Bank indicator code you know.
+If the hypothesis involves a niche topic (e.g., renewable energy, military spending, tourism),
+use the appropriate specialized indicator.
 
 Return JSON:
 {
@@ -170,14 +287,9 @@ Return JSON:
     "end_year": 2023,
     "pubmed_query": "search query for PubMed",
     "semantic_scholar_query": "search query for Semantic Scholar",
-    "reasoning": "explanation"
-}
-
-EXAMPLE for "healthcare spending -> life expectancy":
-- independent_var: "SH.XPD.CHEX.GD.ZS" (health expenditure % GDP)
-- dependent_var: "SP.DYN.LE00.IN" (life expectancy)
-- controls: GDP per capita, education enrollment, urbanization""",
-        user=f'Hypothesis: "{hypothesis_text}"\n\nPick the CORRECT X and Y indicators. X must be the CAUSE, Y must be the EFFECT.',
+    "reasoning": "why these indicators are the best choice"
+}""",
+        user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.',
     )
 
     # Tautology check (v4.1)
@@ -223,6 +335,9 @@ EXAMPLE for "healthcare spending -> life expectancy":
     print(f"  -> Controls: {', '.join(c['label'] for c in plan['control_vars'])}")
     print(f"  -> Years: {plan['start_year']}-{plan['end_year']}")
 
+    # Validate indicators exist and have enough data (v4.2)
+    plan = validate_and_fix_indicators(plan)
+
     return plan
 
 
@@ -250,18 +365,28 @@ class WorldBankFetcher:
                 f"{self.BASE_URL}/country/all/indicator/{indicator}"
                 f"?date={start_year}:{end_year}&format=json&per_page=1000&page={page}"
             )
-            try:
-                resp = requests.get(url, timeout=30)
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                print(f"    ⚠️  World Bank API error: {e}")
+            # Retry up to 3 times per page
+            resp_data = None
+            for attempt in range(3):
+                try:
+                    resp = requests.get(url, timeout=45)
+                    resp.raise_for_status()
+                    resp_data = resp.json()
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        print(f"    ⚠️  Retry {attempt + 1}/3 for {indicator}: {e}")
+                        time.sleep(2)
+                    else:
+                        print(f"    ⚠️  World Bank API failed after 3 attempts: {e}")
+
+            if not resp_data:
                 break
 
-            if len(data) < 2 or not data[1]:
+            if len(resp_data) < 2 or not resp_data[1]:
                 break
 
-            for record in data[1]:
+            for record in resp_data[1]:
                 value = record.get("value")
                 if value is not None:
                     cc = record.get("country", {}).get("id", "")
@@ -273,7 +398,7 @@ class WorldBankFetcher:
                             "value": float(value),
                         })
 
-            if page >= data[0].get("pages", 1):
+            if page >= resp_data[0].get("pages", 1):
                 break
             page += 1
 
