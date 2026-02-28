@@ -27,8 +27,15 @@ import pandas as pd
 import scipy.stats as scipystats
 import statsmodels.api as sm
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
+from docx.shared import Pt, Inches, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 import anthropic
 
@@ -100,6 +107,187 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def strip_duplicate_heading(text: str, heading: str) -> str:
+    """Remove duplicate heading at the start of AI-generated section text."""
+    lines = text.strip().split("\n")
+    if not lines:
+        return text
+    first = lines[0].strip().lower()
+    heading_clean = heading.strip().lower()
+    # Remove leading numbers like "1." "2." etc
+    first_no_num = re.sub(r"^\d+[\.\)]\s*", "", first)
+    heading_no_num = re.sub(r"^\d+[\.\)]\s*", "", heading_clean)
+    if first_no_num == heading_no_num or first == heading_no_num:
+        return "\n".join(lines[1:]).strip()
+    return text
+
+
+# ============================================================================
+# REGION MAPPING (for colored scatterplots)
+# ============================================================================
+def fetch_country_regions() -> dict:
+    """Fetch country-to-region mapping from World Bank API."""
+    try:
+        resp = requests.get(
+            "https://api.worldbank.org/v2/country?format=json&per_page=300",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if len(data) < 2:
+            return {}
+        mapping = {}
+        for c in data[1]:
+            code = c.get("id", "")
+            region = c.get("region", {}).get("value", "Other")
+            name = c.get("name", "")
+            if region and region != "Aggregates":
+                mapping[name] = region
+        return mapping
+    except Exception:
+        return {}
+
+
+REGION_COLORS = {
+    "East Asia & Pacific": "#E63946",
+    "Europe & Central Asia": "#457B9D",
+    "Latin America & Caribbean": "#2A9D8F",
+    "Middle East & North Africa": "#E9C46A",
+    "North America": "#264653",
+    "South Asia": "#F4A261",
+    "Sub-Saharan Africa": "#6A0572",
+    "Other": "#AAAAAA",
+}
+
+
+# ============================================================================
+# CHART GENERATION (ggplot-style)
+# ============================================================================
+def setup_ggplot_style():
+    """Configure matplotlib to look like ggplot2."""
+    plt.rcParams.update({
+        "figure.facecolor": "white",
+        "axes.facecolor": "#F0F0F0",
+        "axes.grid": True,
+        "grid.color": "white",
+        "grid.linewidth": 1.2,
+        "axes.edgecolor": "#CCCCCC",
+        "axes.linewidth": 0.8,
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.titlesize": 13,
+        "axes.labelsize": 11,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "legend.fontsize": 8,
+        "figure.dpi": 150,
+    })
+
+
+def generate_scatterplot(df: pd.DataFrame, plan: dict, output_dir: str) -> str:
+    """Generate a ggplot-style scatterplot colored by region."""
+    setup_ggplot_style()
+    print("  📊 Generating scatterplot...")
+
+    regions = fetch_country_regions()
+    df_plot = df.copy()
+    df_plot["region"] = df_plot["country"].map(regions).fillna("Other")
+
+    # Aggregate to country means for cleaner plot
+    country_means = df_plot.groupby(["country", "region"]).agg(
+        x=("x", "mean"), y=("y", "mean")
+    ).reset_index()
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+    for region, color in REGION_COLORS.items():
+        subset = country_means[country_means["region"] == region]
+        if len(subset) > 0:
+            ax.scatter(
+                subset["x"], subset["y"],
+                c=color, label=region, alpha=0.7, s=35, edgecolors="white", linewidths=0.4,
+            )
+
+    # Regression line
+    valid = country_means.dropna(subset=["x", "y"])
+    if len(valid) > 2:
+        z = np.polyfit(valid["x"], valid["y"], 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(valid["x"].min(), valid["x"].max(), 100)
+        ax.plot(x_line, p(x_line), color="#333333", linewidth=1.5, linestyle="--", alpha=0.7)
+
+    ax.set_xlabel(plan["x_label"])
+    ax.set_ylabel(plan["y_label"])
+    ax.set_title(f"{plan['x_label']} vs {plan['y_label']}", fontweight="bold")
+    ax.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#CCCCCC", ncol=2)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, "scatterplot.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"    ✅ Saved: {path}")
+    return path
+
+
+def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str:
+    """Generate a coefficient comparison plot across specifications."""
+    setup_ggplot_style()
+    print("  📊 Generating coefficient plot...")
+
+    specs = []
+    labels = []
+
+    if "ols_controls" in results and "error" not in results["ols_controls"]:
+        r = results["ols_controls"]
+        specs.append((r["coefficient"], r["std_error"], r["p_value"]))
+        labels.append("OLS + Controls")
+
+    if "fixed_effects" in results and "error" not in results["fixed_effects"]:
+        r = results["fixed_effects"]
+        specs.append((r["coefficient"], r["std_error"], r["p_value"]))
+        labels.append("Fixed Effects")
+
+    if not specs:
+        # Fallback to simple OLS
+        if "ols" in results and "error" not in results["ols"]:
+            r = results["ols"]
+            specs.append((r["coefficient"], r["std_error"], r["p_value"]))
+            labels.append("OLS")
+
+    if not specs:
+        return ""
+
+    fig, ax = plt.subplots(figsize=(6, max(2.5, len(specs) * 1.2)))
+
+    y_pos = range(len(specs))
+    coefs = [s[0] for s in specs]
+    errors = [s[1] * 1.96 for s in specs]  # 95% CI
+    colors = ["#2A9D8F" if s[2] < 0.05 else "#E76F51" for s in specs]
+
+    ax.barh(y_pos, coefs, xerr=errors, color=colors, alpha=0.8, height=0.5,
+            edgecolor="white", capsize=4)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(labels)
+    ax.axvline(x=0, color="#333333", linewidth=0.8, linestyle="-")
+    ax.set_xlabel(f"Effect on {plan['y_label']}")
+    ax.set_title("Coefficient Estimates (95% CI)", fontweight="bold")
+
+    # Color legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor="#2A9D8F", label="p < 0.05"),
+        Patch(facecolor="#E76F51", label="p ≥ 0.05"),
+    ]
+    ax.legend(handles=legend_elements, loc="lower right", frameon=True, facecolor="white")
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, "coefficients.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"    ✅ Saved: {path}")
+    return path
 
 
 # ============================================================================
@@ -762,8 +950,24 @@ Return JSON:
 
 
 # ============================================================================
-# AGENT 6: PAPER WRITER (AI x5 calls)
+# AGENT 6: PAPER WRITER (AI — improved with McCloskey rules)
 # ============================================================================
+WRITING_RULES = """WRITING STYLE (follow strictly):
+- Never start with "This paper" or "This study". Hook the reader with the puzzle or finding.
+- Use active verbs: "We estimate" not "estimation was performed". Find the action, express it as a verb.
+- Be concrete: "a $429 increase" not "a statistically significant positive association".
+- No boilerplate: skip "the rest of this paper is organized as follows" or table-of-contents paragraphs.
+- No elegant variation: if you call it "electricity access" once, don't switch to "electrification rate" then "energy provision" then "power availability". Pick one term and stick with it.
+- "Significant" means statistically significant ONLY. For importance use "large", "substantial", "meaningful".
+- Keep causality language honest: if the design only shows correlation, use "is associated with", "suggests", never "causes" or "leads to".
+- No em dashes. Use commas, semicolons, or separate sentences.
+- No five-dollar words when plain ones work: "use" not "utilize", "start" not "commence", "show" not "demonstrate".
+- Avoid "this", "these", "those" as much as possible. Use "the" or repeat the noun.
+- Write as if explaining to a smart colleague over coffee, not performing for a tenure committee.
+- Equations: write them out with words when possible. "GDP per capita = α + β × Electricity Access + ε"
+- No markdown formatting whatsoever. No #, **, *, `, $$, LaTeX.
+- Do NOT write a full paper. Write ONLY the section requested."""
+
 class PaperWriter:
     def __init__(self, plan, results, interpretation, literature):
         self.plan = plan
@@ -779,7 +983,7 @@ class PaperWriter:
         lines = ["VERIFIED CITATIONS - you may ONLY cite these:"]
         for i, a in enumerate(self.literature[:15]):
             lines.append(f"  {i+1}. {a['authors_short']} ({a['year']}). \"{a['title']}\". {a['journal']}.")
-        lines.append("\nDo NOT cite any source not listed above.")
+        lines.append("\nCRITICAL: Do NOT cite any source not listed above. No Becker, no Lucas, no Acemoglu unless listed.")
         self.cites = "\n".join(lines)
 
     def _verify_citations(self, text):
@@ -815,9 +1019,6 @@ class PaperWriter:
             print(f"    ⚠️  Removed hallucinated citation: ({r})")
         return cleaned
 
-    def _rules(self):
-        return "RULES: Write ONLY the requested section. No markdown. No full paper. Clean academic prose."
-
     def write_all(self):
         print("\n📝 AGENT 6: Writing paper sections...")
         sections = {}
@@ -826,42 +1027,276 @@ class PaperWriter:
             raw = ask_claude(sys_p, usr_p, 3000)
             text = strip_markdown(raw)
             text = self._verify_citations(text)
+            text = strip_duplicate_heading(text, name.replace("_", " "))
             sections[name] = text
             time.sleep(1)
         return sections
 
     def _prompts(self):
         desc = self.results.get("descriptive", {})
-        ols = self.results.get("ols", {})
+        ols_c = self.results.get("ols_controls", {})
+        fe = self.results.get("fixed_effects", {})
+        corr = self.results.get("correlation", {})
+
+        # Prefer controlled results for prompts
+        main_result = ols_c if ols_c and "error" not in ols_c else self.results.get("ols", {})
+        fe_result = fe if fe and "error" not in fe else {}
+
         return {
             "abstract": (
-                f"You are an academic writer. Write ONLY an abstract (150-250 words).\n{self._rules()}\n{self.cites}",
-                f"Hypothesis: {self.plan['statement']}\nFinding: {self.interp.get('main_finding','N/A')}\nStrength: {self.interp.get('strength','N/A')}\nOLS: B={ols.get('coefficient','N/A')}, p={ols.get('p_value','N/A')}, R2={ols.get('r_squared','N/A')}\nN={desc.get('n_obs','N/A')} obs, {desc.get('n_countries','N/A')} countries\nWrite the abstract.",
+                f"You are an economics journal writer. Write ONLY an abstract (150-200 words). {WRITING_RULES}\n{self.cites}",
+                f"""Hypothesis: {self.plan['statement']}
+X: {self.plan['x_label']}
+Y: {self.plan['y_label']}
+OLS+controls: B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}, R2={main_result.get('r_squared','N/A')}
+Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}, R2w={fe_result.get('r_squared_within','N/A')}
+N={desc.get('n_obs','N/A')} observations, {desc.get('n_countries','N/A')} countries
+Interpretation: {self.interp.get('main_finding','N/A')}
+Tone: {self.interp.get('recommended_tone','cautious')}
+
+Write a concise abstract. Focus on the controlled and fixed-effects results, not bivariate OLS. Start with the finding or puzzle, not "This paper examines".""",
             ),
             "introduction": (
-                f"You are an academic writer. Write ONLY an introduction (400-600 words).\n{self._rules()}\n{self.cites}",
-                f"Hypothesis: {self.plan['statement']}\nX: {self.plan['x_label']}\nY: {self.plan['y_label']}\nTone: {self.interp.get('recommended_tone','cautious')}\nData: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}\nWrite the introduction.",
+                f"You are an economics journal writer. Write ONLY an introduction (400-500 words). {WRITING_RULES}\n{self.cites}",
+                f"""Hypothesis: {self.plan['statement']}
+X: {self.plan['x_label']}, Y: {self.plan['y_label']}
+Main finding: {self.interp.get('main_finding','N/A')}
+Tone: {self.interp.get('recommended_tone','cautious')}
+Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
+
+Write the introduction. Hook the reader with a concrete fact or puzzle. Explain why the question matters using real-world stakes. Briefly preview the approach and finding. Do NOT include a roadmap paragraph ("Section 2 reviews...").""",
             ),
             "literature_review": (
-                f"You are an academic writer. Write ONLY a literature review (400-700 words).\n{self._rules()}\n{self.cites}\nCRITICAL: Only cite papers from the verified list.",
-                f"Hypothesis: {self.plan['statement']}\nWrite the literature review using ONLY verified citations.",
+                f"You are an economics journal writer. Write ONLY a literature review (400-600 words). {WRITING_RULES}\n{self.cites}\n\nCRITICAL: Only cite papers from the verified list. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries. Identify 2-3 perspectives or tensions in the literature.",
+                f"""Hypothesis: {self.plan['statement']}
+
+Write the literature review. Do NOT summarize each paper sequentially. Instead:
+1. Identify the main debate or tension in the literature
+2. Group papers by what position they support
+3. Note where evidence conflicts or where gaps exist
+4. Connect to how your analysis addresses these gaps
+
+Avoid starting every paragraph with an author name. Lead with the idea, then cite.""",
             ),
             "methodology_results": (
-                f"You are an academic writer. Write ONLY methodology + results (600-1000 words).\n{self._rules()}\nPresent all coefficients, p-values, R2, sample sizes.",
-                f"Hypothesis: {self.plan['statement']}\nX: {self.plan['x_label']} ({self.plan['independent_var']})\nY: {self.plan['y_label']} ({self.plan['dependent_var']})\nData: World Bank\n{json.dumps(self.results, indent=2, default=str)}\nWrite methodology and results.",
+                f"You are an economics journal writer. Write ONLY methodology and results (600-800 words). {WRITING_RULES}",
+                f"""Hypothesis: {self.plan['statement']}
+X: {self.plan['x_label']} ({self.plan['independent_var']})
+Y: {self.plan['y_label']} ({self.plan['dependent_var']})
+Controls: {', '.join(c['label'] for c in self.plan.get('control_vars', []))}
+Source: World Bank World Development Indicators
+
+RESULTS (focus on controlled and fixed-effects, not bivariate OLS):
+{json.dumps(self.results, indent=2, default=str)}
+
+STRUCTURE:
+Methodology section:
+- State the equation clearly using words: "{self.plan['y_label']} = α + β × {self.plan['x_label']} + Controls + ε"
+- Briefly mention the control variables and why they are included (1-2 sentences, not a paragraph per control)
+- Describe the fixed effects specification
+- Data source and coverage
+
+Results section:
+- Lead with the OLS+controls result (the default specification). This is the main result.
+- Then show how fixed effects changes the picture
+- Mention correlation coefficients briefly
+- DO NOT dwell on the bivariate OLS without controls. It is naive and only useful as a benchmark.
+- If the coefficient sign flips or the magnitude changes dramatically across specifications, EXPLAIN WHY. This is the story.
+- Report exact numbers: coefficient, standard error, p-value, R-squared, N
+- Do not describe what control variables "capture" in the results section. The reader knows.""",
             ),
             "conclusion": (
-                f"You are an academic writer. Write ONLY a conclusion (300-500 words).\n{self._rules()}\n{self.cites}\nMatch tone to evidence strength.",
-                f"Hypothesis: {self.plan['statement']}\nInterpretation: {json.dumps(self.interp, indent=2, default=str)}\nOLS: B={ols.get('coefficient','N/A')}, p={ols.get('p_value','N/A')}\nWrite the conclusion. Be honest about limitations.",
+                f"You are an economics journal writer. Write ONLY a conclusion (250-400 words). {WRITING_RULES}\n{self.cites}",
+                f"""Hypothesis: {self.plan['statement']}
+Interpretation: {json.dumps(self.interp, indent=2, default=str)}
+Main result (OLS+controls): B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}
+Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}
+
+Write the conclusion. Be honest. If evidence is weak, say so directly.
+- State what the analysis found (1-2 sentences)
+- Acknowledge limitations concretely (endogeneity, omitted variables, measurement)
+- Suggest what future work could do differently (specific methods, not vague "more research needed")
+- End with a concrete policy implication or takeaway, appropriately hedged""",
             ),
         }
 
 
 # ============================================================================
-# AGENT 7: DOCUMENT ASSEMBLER (Code)
+# AGENT 6b: PROOFREADER (AI — applies McCloskey rules)
+# ============================================================================
+def ai_proofread(sections: dict) -> dict:
+    print("\n🔎 AGENT 6b: Proofreading all sections...")
+
+    full_text = "\n\n---\n\n".join(
+        f"[{name.upper()}]\n{text}" for name, text in sections.items() if text
+    )
+
+    proofread_text = ask_claude(
+        system=f"""You are a meticulous academic editor trained in Deirdre McCloskey's writing rules. Your job is to proofread and improve economics papers.
+
+{WRITING_RULES}
+
+ADDITIONAL PROOFREADING RULES:
+- Remove any sentence that begins with "This paper" or "This study" and rewrite it.
+- Remove any table-of-contents paragraph ("The rest of the paper is organized as follows").
+- Remove any section heading that got duplicated at the start of the section text.
+- Fix nominalization: "there is a need for reanalysis" -> "we must reanalyze".
+- Remove "very", "absolutely", "purely" unless they carry real meaning.
+- Replace "significant" with "large/substantial/meaningful" unless referring to statistical significance.
+- Remove "it is important to note that" and similar throat-clearing.
+- Keep the EXACT same structure: each section starts with [SECTION_NAME] on its own line.
+- Do NOT add new facts, citations, or data. Only improve the writing.
+- Do NOT add markdown formatting.
+- Keep the substance identical. Only improve clarity, tone, and style.""",
+        user=f"Proofread and improve the following paper sections. Return the FULL text with the same [SECTION_NAME] markers:\n\n{full_text}",
+        max_tokens=6000,
+    )
+
+    proofread_text = strip_markdown(proofread_text)
+
+    # Parse back into sections
+    improved = {}
+    for name in sections:
+        marker = f"[{name.upper()}]"
+        if marker in proofread_text:
+            start = proofread_text.index(marker) + len(marker)
+            # Find next marker or end
+            next_start = len(proofread_text)
+            for other_name in sections:
+                other_marker = f"[{other_name.upper()}]"
+                if other_marker in proofread_text and proofread_text.index(other_marker) > start:
+                    next_start = min(next_start, proofread_text.index(other_marker))
+            text = proofread_text[start:next_start].strip()
+            text = text.lstrip("-").strip()
+            if len(text) > 50:  # Only use if substantial
+                improved[name] = text
+                print(f"  ✅ Proofread: {name}")
+            else:
+                improved[name] = sections[name]
+        else:
+            improved[name] = sections[name]
+
+    return improved
+
+
+# ============================================================================
+# AGENT 7: DOCUMENT ASSEMBLER (Code — with tables and charts)
 # ============================================================================
 class DocumentAssembler:
-    def create(self, plan, sections, all_results, literature, controls_fetched, output_path):
+    def _add_table(self, doc, headers, rows, col_widths=None):
+        """Add a formatted table to the document."""
+        table = doc.add_table(rows=1 + len(rows), cols=len(headers))
+        table.style = "Table Grid"
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header row
+        for i, h in enumerate(headers):
+            cell = table.rows[0].cells[i]
+            cell.text = ""
+            p = cell.paragraphs[0]
+            run = p.add_run(h)
+            run.font.size = Pt(9)
+            run.font.bold = True
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Light gray background
+            shading = cell._element.get_or_add_tcPr()
+            shading_elm = shading.makeelement(qn("w:shd"), {
+                qn("w:val"): "clear",
+                qn("w:color"): "auto",
+                qn("w:fill"): "E8E8E8",
+            })
+            shading.append(shading_elm)
+
+        # Data rows
+        for ri, row in enumerate(rows):
+            for ci, val in enumerate(row):
+                cell = table.rows[ri + 1].cells[ci]
+                cell.text = ""
+                p = cell.paragraphs[0]
+                run = p.add_run(str(val))
+                run.font.size = Pt(9)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        if col_widths:
+            for i, w in enumerate(col_widths):
+                for row in table.rows:
+                    row.cells[i].width = Inches(w)
+
+        doc.add_paragraph("")  # spacing
+
+    def _add_descriptive_table(self, doc, results):
+        """Add Table 1: Descriptive Statistics."""
+        desc = results.get("descriptive", {})
+        if not desc:
+            return
+
+        doc.add_paragraph("")
+        p = doc.add_paragraph()
+        run = p.add_run("Table 1: Descriptive Statistics")
+        run.font.bold = True
+        run.font.size = Pt(10)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        headers = ["Variable", "N", "Mean", "Std. Dev.", "Min", "Max"]
+        rows = []
+        for var_key, label in [("x", "X"), ("y", "Y")]:
+            s = desc.get(f"{var_key}_stats", {})
+            if s:
+                rows.append([
+                    label,
+                    str(desc.get("n_obs", "")),
+                    f"{s.get('mean', 0):.3f}",
+                    f"{s.get('std', 0):.3f}",
+                    f"{s.get('min', 0):.3f}",
+                    f"{s.get('max', 0):.3f}",
+                ])
+
+        if rows:
+            self._add_table(doc, headers, rows, [1.2, 0.7, 1.0, 1.0, 1.0, 1.0])
+
+    def _add_regression_table(self, doc, results, plan):
+        """Add Table 2: Regression Results."""
+        doc.add_paragraph("")
+        p = doc.add_paragraph()
+        run = p.add_run("Table 2: Regression Results")
+        run.font.bold = True
+        run.font.size = Pt(10)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        headers = ["", "OLS + Controls", "Fixed Effects"]
+        rows = []
+
+        ols_c = results.get("ols_controls", {})
+        fe = results.get("fixed_effects", {})
+
+        def fmt_coef(r, key="coefficient", se_key="std_error", p_key="p_value"):
+            if not r or "error" in r:
+                return ""
+            c = r.get(key, 0)
+            se = r.get(se_key, 0)
+            p = r.get(p_key, 1)
+            stars = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
+            return f"{c:.4f}{stars}\n({se:.4f})"
+
+        x_label = plan.get("x_label", "X")
+        if len(x_label) > 30:
+            x_label = x_label[:30] + "..."
+
+        rows.append([x_label, fmt_coef(ols_c), fmt_coef(fe)])
+        rows.append(["R²", f"{ols_c.get('r_squared', '')}", f"{fe.get('r_squared_within', '')} (within)"])
+        rows.append(["N", str(ols_c.get("n_obs", "")), str(fe.get("n_obs", ""))])
+        rows.append(["Controls", "Yes", "Country FE"])
+
+        self._add_table(doc, headers, rows, [1.8, 1.8, 1.8])
+
+        # Significance note
+        p = doc.add_paragraph()
+        run = p.add_run("Notes: * p < 0.05, ** p < 0.01, *** p < 0.001. Standard errors in parentheses.")
+        run.font.size = Pt(8)
+        run.font.italic = True
+
+    def create(self, plan, sections, all_results, literature, controls_fetched, output_path,
+               scatterplot_path=None, coeff_plot_path=None):
         print("\n📄 AGENT 7: Assembling document...")
 
         title = plan.get("title", "").strip()
@@ -869,6 +1304,11 @@ class DocumentAssembler:
             title = f"The Effect of {plan['x_label']} on {plan['y_label']}: A Cross-Country Panel Analysis"
 
         doc = Document()
+
+        # Set default font
+        style = doc.styles["Normal"]
+        style.font.name = "Times New Roman"
+        style.font.size = Pt(11)
 
         # Title
         p = doc.add_paragraph()
@@ -892,8 +1332,9 @@ class DocumentAssembler:
             "introduction": "1. Introduction",
             "literature_review": "2. Literature Review",
             "methodology_results": "3. Methodology and Results",
-            "conclusion": "4. Conclusion",
+            "conclusion": "4. Conclusion and Policy Implications",
         }
+
         for key, heading in headings.items():
             text = sections.get(key, "")
             if not text:
@@ -902,11 +1343,44 @@ class DocumentAssembler:
             for run in h.runs:
                 run.font.size = Pt(13)
                 run.font.color.rgb = RGBColor(0, 0, 0)
+
             for para in text.split("\n\n"):
                 para = para.strip()
                 if para:
                     p = doc.add_paragraph(para)
                     p.style.font.size = Pt(11)
+
+            # Insert descriptive stats table after methodology heading
+            if key == "methodology_results":
+                self._add_descriptive_table(doc, all_results)
+                # Insert scatterplot
+                if scatterplot_path and os.path.exists(scatterplot_path):
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run(f"Figure 1: {plan['x_label']} vs {plan['y_label']} by Region (Country Averages)")
+                    run.font.bold = True
+                    run.font.size = Pt(10)
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run()
+                    run.add_picture(scatterplot_path, width=Inches(5.5))
+                    doc.add_paragraph("")
+
+                # Insert regression table
+                self._add_regression_table(doc, all_results, plan)
+
+                # Insert coefficient plot
+                if coeff_plot_path and os.path.exists(coeff_plot_path):
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run("Figure 2: Coefficient Estimates Across Specifications (95% Confidence Intervals)")
+                    run.font.bold = True
+                    run.font.size = Pt(10)
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run()
+                    run.add_picture(coeff_plot_path, width=Inches(4.5))
+                    doc.add_paragraph("")
 
         # References
         if literature:
@@ -1008,7 +1482,7 @@ print("Done.")
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v4.1")
+    print("  EMPIRICA v4.3")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print("=" * 60)
@@ -1061,6 +1535,18 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     if "error" in results:
         raise ValueError(f"Analysis failed: {results['error']}")
 
+    # Generate charts
+    scatterplot_path = ""
+    coeff_plot_path = ""
+    try:
+        scatterplot_path = generate_scatterplot(df, plan, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Scatterplot failed: {e}")
+    try:
+        coeff_plot_path = generate_coefficient_plot(results, plan, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Coefficient plot failed: {e}")
+
     # Agent 5: Interpret
     interpretation = ai_interpret_results(results, plan)
 
@@ -1068,21 +1554,25 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     writer = PaperWriter(plan, results, interpretation, literature)
     sections = writer.write_all()
 
+    # Agent 6b: Proofread
+    sections = ai_proofread(sections)
+
     # Agent 7: Assemble
     paper_path = os.path.join(output_dir, "paper.docx")
     assembler = DocumentAssembler()
-    assembler.create(plan, sections, results, literature, controls_fetched, paper_path)
+    assembler.create(plan, sections, results, literature, controls_fetched, paper_path,
+                     scatterplot_path=scatterplot_path, coeff_plot_path=coeff_plot_path)
 
     repro_path = os.path.join(output_dir, "reproduce.py")
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA COMPLETE")
+    print("  ✅ EMPIRICA v4.3 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
-    ols = results.get("ols", {})
-    print(f"  Result: B={ols.get('coefficient','N/A')}, p={ols.get('p_value','N/A')}, R2={ols.get('r_squared','N/A')}")
+    main_r = results.get("ols_controls", results.get("ols", {}))
+    print(f"  Result: B={main_r.get('coefficient','N/A')}, p={main_r.get('p_value','N/A')}, R2={main_r.get('r_squared','N/A')}")
     print("=" * 60)
 
     return results
