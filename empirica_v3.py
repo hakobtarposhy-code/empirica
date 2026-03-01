@@ -1,10 +1,9 @@
 # ============================================================================
-# EMPIRICA v4.4 — Complete Research Pipeline
+# EMPIRICA v1.1.0 — Complete Research Pipeline
 # ============================================================================
-# Changes from v4.3:
-#   1. Model upgrade: claude-sonnet-4-5-20250929 (Sonnet 4.5)
-#   2. Extended thinking for hypothesis parsing, data review, results review
-#   3. Literature search: 15 SS + 10 SS broad + 10 PM + 5 PM broad = 20-30+ papers
+# v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
+# v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
+#         academic paper formatting (margins, spacing, page numbers, title page)
 #
 # Usage:
 #   As module (from Streamlit/app.py):
@@ -478,6 +477,8 @@ Return JSON:
     "pubmed_query_broad": "broader/different-angle PubMed query",
     "semantic_scholar_query": "search query for Semantic Scholar (focused)",
     "semantic_scholar_query_broad": "broader/different-angle Semantic Scholar query",
+    "jel_codes": "JEL classification codes (e.g., O11, C23, I15)",
+    "keywords": "4-6 keywords for the paper",
     "reasoning": "why these indicators are the best choice"
 }""",
         user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.\nAlso generate TWO search queries per database — one focused, one broader — to maximize literature coverage.',
@@ -1217,6 +1218,68 @@ ADDITIONAL PROOFREADING RULES:
 # AGENT 7: DOCUMENT ASSEMBLER (Code — with tables and charts)
 # ============================================================================
 class DocumentAssembler:
+    """Assembles the final Word document with academic journal formatting."""
+
+    def _setup_document(self, doc):
+        """Set up margins, font, spacing, and page numbers for the whole document."""
+        from docx.oxml import OxmlElement
+
+        # --- Margins: 1 inch all around ---
+        section = doc.sections[0]
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
+
+        # --- Default font: 12pt Times New Roman, 1.5 line spacing ---
+        style = doc.styles["Normal"]
+        style.font.name = "Times New Roman"
+        style.font.size = Pt(12)
+        style.paragraph_format.space_after = Pt(0)
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.line_spacing = 1.5
+
+        # --- Heading 1 style: bold, 14pt, black, space before ---
+        h1_style = doc.styles["Heading 1"]
+        h1_style.font.name = "Times New Roman"
+        h1_style.font.size = Pt(14)
+        h1_style.font.bold = True
+        h1_style.font.color.rgb = RGBColor(0, 0, 0)
+        h1_style.paragraph_format.space_before = Pt(24)
+        h1_style.paragraph_format.space_after = Pt(12)
+        h1_style.paragraph_format.line_spacing = 1.5
+
+        # --- Page numbers: bottom center ---
+        footer = section.footer
+        footer.is_linked_to_previous = False
+        fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        fp.style.font.size = Pt(10)
+        fp.style.font.name = "Times New Roman"
+
+        fld_char_begin = OxmlElement("w:fldChar")
+        fld_char_begin.set(qn("w:fldCharType"), "begin")
+        instr_text = OxmlElement("w:instrText")
+        instr_text.set(qn("xml:space"), "preserve")
+        instr_text.text = " PAGE "
+        fld_char_end = OxmlElement("w:fldChar")
+        fld_char_end.set(qn("w:fldCharType"), "end")
+
+        run = fp.add_run()
+        run._element.append(fld_char_begin)
+        run2 = fp.add_run()
+        run2._element.append(instr_text)
+        run3 = fp.add_run()
+        run3._element.append(fld_char_end)
+
+    def _add_body_paragraph(self, doc, text, first_line_indent=True):
+        """Add a body paragraph with optional first-line indent."""
+        p = doc.add_paragraph(text)
+        p.style = doc.styles["Normal"]
+        if first_line_indent:
+            p.paragraph_format.first_line_indent = Inches(0.4)
+        return p
+
     def _add_table(self, doc, headers, rows, col_widths=None):
         table = doc.add_table(rows=1 + len(rows), cols=len(headers))
         table.style = "Table Grid"
@@ -1228,6 +1291,7 @@ class DocumentAssembler:
             p = cell.paragraphs[0]
             run = p.add_run(h)
             run.font.size = Pt(9)
+            run.font.name = "Times New Roman"
             run.font.bold = True
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             shading = cell._element.get_or_add_tcPr()
@@ -1245,6 +1309,7 @@ class DocumentAssembler:
                 p = cell.paragraphs[0]
                 run = p.add_run(str(val))
                 run.font.size = Pt(9)
+                run.font.name = "Times New Roman"
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         if col_widths:
@@ -1263,7 +1328,9 @@ class DocumentAssembler:
         p = doc.add_paragraph()
         run = p.add_run("Table 1: Descriptive Statistics")
         run.font.bold = True
+        run.font.italic = True
         run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         headers = ["Variable", "N", "Mean", "Std. Dev.", "Min", "Max"]
@@ -1288,7 +1355,9 @@ class DocumentAssembler:
         p = doc.add_paragraph()
         run = p.add_run("Table 2: Regression Results")
         run.font.bold = True
+        run.font.italic = True
         run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         headers = ["", "OLS + Controls", "Fixed Effects"]
@@ -1319,8 +1388,9 @@ class DocumentAssembler:
 
         p = doc.add_paragraph()
         run = p.add_run("Notes: * p < 0.05, ** p < 0.01, *** p < 0.001. Standard errors in parentheses.")
-        run.font.size = Pt(8)
+        run.font.size = Pt(9)
         run.font.italic = True
+        run.font.name = "Times New Roman"
 
     def create(self, plan, sections, all_results, literature, controls_fetched, output_path,
                scatterplot_path=None, coeff_plot_path=None):
@@ -1331,27 +1401,98 @@ class DocumentAssembler:
             title = f"The Effect of {plan['x_label']} on {plan['y_label']}: A Cross-Country Panel Analysis"
 
         doc = Document()
+        self._setup_document(doc)
 
-        style = doc.styles["Normal"]
-        style.font.name = "Times New Roman"
-        style.font.size = Pt(11)
+        # ===== TITLE PAGE =====
 
+        # Vertical space before title
+        for _ in range(4):
+            doc.add_paragraph("")
+
+        # Title
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(24)
         run = p.add_run(title)
-        run.font.size = Pt(16)
+        run.font.size = Pt(18)
         run.font.bold = True
+        run.font.name = "Times New Roman"
 
+        # Author placeholder
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(f"Generated by Empirica | {datetime.now().strftime('%B %d, %Y')}")
-        run.font.size = Pt(10)
-        run.font.color.rgb = RGBColor(128, 128, 128)
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run("[Author Name]")
+        run.font.size = Pt(12)
+        run.font.name = "Times New Roman"
 
-        doc.add_paragraph("")
+        # Affiliation placeholder
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run("[Institution / Affiliation]")
+        run.font.size = Pt(11)
+        run.font.italic = True
+        run.font.name = "Times New Roman"
+
+        # Date
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(30)
+        run = p.add_run(datetime.now().strftime("%B %Y"))
+        run.font.size = Pt(11)
+        run.font.name = "Times New Roman"
+
+        # Abstract on title page
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(8)
+        run = p.add_run("Abstract")
+        run.font.size = Pt(12)
+        run.font.bold = True
+        run.font.name = "Times New Roman"
+
+        abstract_text = sections.get("abstract", "")
+        if abstract_text:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.left_indent = Inches(0.5)
+            p.paragraph_format.right_indent = Inches(0.5)
+            p.paragraph_format.space_after = Pt(12)
+            run = p.add_run(abstract_text.replace("\n\n", " ").replace("\n", " "))
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+
+        # JEL codes + keywords
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Inches(0.5)
+        p.paragraph_format.space_after = Pt(4)
+        run = p.add_run("JEL Classification: ")
+        run.font.bold = True
+        run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
+        run = p.add_run(plan.get("jel_codes", "O11, O47, C23"))
+        run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
+
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Inches(0.5)
+        p.paragraph_format.space_after = Pt(12)
+        run = p.add_run("Keywords: ")
+        run.font.bold = True
+        run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
+        keywords = plan.get("keywords", f"{plan['x_label']}, {plan['y_label']}, panel data, cross-country analysis")
+        run = p.add_run(keywords)
+        run.font.size = Pt(10)
+        run.font.name = "Times New Roman"
+
+        # Page break after title page
+        doc.add_page_break()
+
+        # ===== BODY SECTIONS =====
 
         headings = {
-            "abstract": "Abstract",
             "introduction": "1. Introduction",
             "literature_review": "2. Literature Review",
             "methodology_results": "3. Methodology and Results",
@@ -1362,25 +1503,30 @@ class DocumentAssembler:
             text = sections.get(key, "")
             if not text:
                 continue
-            h = doc.add_heading(heading, level=1)
-            for run in h.runs:
-                run.font.size = Pt(13)
-                run.font.color.rgb = RGBColor(0, 0, 0)
 
-            for para in text.split("\n\n"):
+            doc.add_heading(heading, level=1)
+
+            paragraphs = text.split("\n\n")
+            for i, para in enumerate(paragraphs):
                 para = para.strip()
-                if para:
-                    p = doc.add_paragraph(para)
-                    p.style.font.size = Pt(11)
+                if not para:
+                    continue
+                # First paragraph after heading: no indent
+                self._add_body_paragraph(doc, para, first_line_indent=(i > 0))
 
+            # Tables and figures after methodology section
             if key == "methodology_results":
                 self._add_descriptive_table(doc, all_results)
+
                 if scatterplot_path and os.path.exists(scatterplot_path):
+                    doc.add_paragraph("")
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     run = p.add_run(f"Figure 1: {plan['x_label']} vs {plan['y_label']} by Region (Country Averages)")
                     run.font.bold = True
+                    run.font.italic = True
                     run.font.size = Pt(10)
+                    run.font.name = "Times New Roman"
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     run = p.add_run()
@@ -1390,26 +1536,38 @@ class DocumentAssembler:
                 self._add_regression_table(doc, all_results, plan)
 
                 if coeff_plot_path and os.path.exists(coeff_plot_path):
+                    doc.add_paragraph("")
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     run = p.add_run("Figure 2: Coefficient Estimates Across Specifications (95% Confidence Intervals)")
                     run.font.bold = True
+                    run.font.italic = True
                     run.font.size = Pt(10)
+                    run.font.name = "Times New Roman"
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     run = p.add_run()
                     run.add_picture(coeff_plot_path, width=Inches(4.5))
                     doc.add_paragraph("")
 
+        # ===== REFERENCES (hanging indent) =====
         if literature:
             doc.add_heading("References", level=1)
             for art in literature:
-                ref = f"{art['authors_short']} ({art['year']}). {art['title']}. {art['journal']}."
+                ref = f"{art['authors_short']} ({art['year']}). {art['title']}. "
+                if art.get("journal") and art["journal"] != "Unknown":
+                    ref += f"{art['journal']}."
                 if art.get("doi"):
-                    ref += f" DOI: {art['doi']}"
-                p = doc.add_paragraph(ref)
-                p.style.font.size = Pt(10)
+                    ref += f" https://doi.org/{art['doi']}"
+
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.5)
+                p.paragraph_format.first_line_indent = Inches(-0.5)  # hanging indent
                 p.paragraph_format.space_after = Pt(4)
+                p.paragraph_format.line_spacing = 1.15
+                run = p.add_run(ref)
+                run.font.size = Pt(10)
+                run.font.name = "Times New Roman"
 
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
         doc.save(output_path)
@@ -1500,7 +1658,7 @@ print("Done.")
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v4.4")
+    print("  EMPIRICA v1.1.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print("=" * 60)
@@ -1582,7 +1740,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v4.4 COMPLETE")
+    print("  ✅ EMPIRICA v1.1.0 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
