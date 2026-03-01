@@ -1,5 +1,5 @@
 """
-Empirica — Streamlit App (v4.3)
+Empirica — Streamlit App (v1.1.0)
 Faithful port of the React landing page design.
 """
 
@@ -11,8 +11,9 @@ import re
 import glob
 import time
 import threading
+import zipfile
 
-st.set_page_config(page_title="Empirica", page_icon="◼", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Empirica", page_icon="🎓", layout="centered", initial_sidebar_state="collapsed")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — ported from React/Tailwind
@@ -777,7 +778,7 @@ st.markdown("""
         margin-bottom: 0.2rem;
     }
     .preview-card-finding::before {
-        content: '→';
+        content: '\2192';
         position: absolute;
         left: 0;
         color: #003A70;
@@ -804,6 +805,61 @@ st.markdown("""
         text-align: center;
         padding: 2.5rem 0 1rem 0;
     }
+
+    /* ── Pipeline stages checklist ── */
+    .stages-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        margin-top: 1.2rem;
+        padding-top: 1rem;
+        border-top: 1px solid #F1F5F9;
+    }
+    .stage-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0.35rem 0;
+        transition: opacity 0.3s ease;
+    }
+    .stage-row.done { opacity: 1; }
+    .stage-row.active { opacity: 1; }
+    .stage-row.pending { opacity: 0.35; }
+    .stage-check {
+        width: 18px; height: 18px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        flex-shrink: 0;
+        transition: all 0.3s ease;
+    }
+    .stage-check.done {
+        background: #003A70;
+        color: white;
+    }
+    .stage-check.active {
+        background: transparent;
+        border: 2px solid #003A70;
+        animation: stage-pulse 1.2s ease-in-out infinite;
+    }
+    .stage-check.pending {
+        background: #F1F5F9;
+        border: 1px solid #E2E8F0;
+    }
+    @keyframes stage-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(0,58,112,0.3); }
+        50% { box-shadow: 0 0 0 4px rgba(0,58,112,0.1); }
+    }
+    .stage-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: #334155;
+    }
+    .stage-row.pending .stage-label { color: #94A3B8; }
+    .stage-row.active .stage-label { color: #003A70; font-weight: 600; }
     .cta-btn {
         display: inline-block;
         background: #0F172A;
@@ -1046,16 +1102,40 @@ if run_button:
             if parts:
                 detail_html = f'<div class="console-details">{"<br>".join(parts)}</div>'
 
+        # Build stages checklist HTML
+        stages_html = '<div class="stages-list">'
+        stage_labels = [
+            "Parsing hypothesis", "Fetching data", "Searching literature",
+            "Reviewing quality", "Running regressions", "Generating charts",
+            "Interpreting results", "Writing paper", "Proofreading", "Assembling document",
+        ]
+        for i, label in enumerate(stage_labels):
+            if i < stage:
+                cls = "done"
+                icon = "&#10003;"
+                check_cls = "done"
+            elif i == stage:
+                cls = "active"
+                icon = ""
+                check_cls = "active"
+            else:
+                cls = "pending"
+                icon = ""
+                check_cls = "pending"
+            stages_html += f'<div class="stage-row {cls}"><div class="stage-check {check_cls}">{icon}</div><div class="stage-label">{label}</div></div>'
+        stages_html += '</div>'
+
         # Build console HTML with NO indentation (Streamlit treats 4-space indent as code)
         console_html = f'<div class="console-wrap">'
         console_html += '<div class="console-header"><div class="console-header-left">'
         console_html += '<div class="console-engine-icon">E</div>'
-        console_html += f'<div><div class="console-engine-title">Empirica Engine v4.3</div>'
+        console_html += f'<div><div class="console-engine-title">Empirica Engine v1.1.0</div>'
         console_html += f'<div class="console-engine-hyp">Analyzing: &quot;{hyp_short}&quot;</div></div>'
         console_html += '</div></div>'
         console_html += '<div class="console-body">'
         console_html += f'<div class="console-step-row"><div class="console-step-text">{step_text}</div><div class="console-step-pct">{pct}%</div></div>'
         console_html += f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%;"></div></div>'
+        console_html += stages_html
         console_html += f'<div class="fact-card"><div class="fact-label">📖 While you wait</div><div class="fact-text">&ldquo;{fact}&rdquo;</div></div>'
         if detail_html:
             console_html += detail_html
@@ -1082,25 +1162,32 @@ if run_button:
             st.code(log_text, language="text")
 
         st.markdown('<div style="height:0.8rem"></div>', unsafe_allow_html=True)
-        col_a, col_b = st.columns(2)
 
+        # Bundle all outputs into a single zip to avoid Streamlit rerun button-disappearing bug
         paper_path = "output/paper.docx"
-        if os.path.exists(paper_path):
-            with open(paper_path, "rb") as f:
-                col_a.download_button(
-                    "📄 Download Paper", data=f.read(),
-                    file_name="empirica_paper.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True,
-                )
         repro_path = "output/reproduce.py"
-        if os.path.exists(repro_path):
-            with open(repro_path, "rb") as f:
-                col_b.download_button(
-                    "💻 Download Code", data=f.read(),
-                    file_name="reproduce.py", mime="text/x-python",
-                    use_container_width=True,
-                )
+        scatter_path = "output/scatterplot.png"
+        coeff_path = "output/coefficients.png"
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            if os.path.exists(paper_path):
+                zf.write(paper_path, "empirica_paper.docx")
+            if os.path.exists(repro_path):
+                zf.write(repro_path, "reproduce.py")
+            if os.path.exists(scatter_path):
+                zf.write(scatter_path, "scatterplot.png")
+            if os.path.exists(coeff_path):
+                zf.write(coeff_path, "coefficients.png")
+        zip_buf.seek(0)
+
+        st.download_button(
+            "📦 Download All (Paper + Code + Charts)",
+            data=zip_buf.getvalue(),
+            file_name="empirica_output.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1157,4 +1244,4 @@ if not run_button or not hypothesis.strip():
         if st.button("Try Empirica Free ↑", key="cta_top", use_container_width=True):
             pass  # clicking reruns the app, which loads at top
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""<div class="emp-footer"><div class="footer-logo"><div style="width:28px;height:28px;background:#0F172A;border-radius:5px;display:flex;align-items:center;justify-content:center;color:white;font-family:'Playfair Display',serif;font-weight:700;font-size:14px;">E</div><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdifAI</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class="emp-footer"><div class="footer-logo"><svg viewBox="0 0 100 100" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/><path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/><path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/><circle cx="85" cy="58" r="4" fill="#0F172A"/></svg><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdifAI</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
