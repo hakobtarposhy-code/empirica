@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v4.1 — Complete Research Pipeline
+# EMPIRICA v4.3 — Complete Research Pipeline
 # ============================================================================
 # Deployment-ready. No hardcoded API keys. No Colab-specific code.
 #
@@ -67,19 +67,20 @@ def get_claude_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
-def ask_claude(system: str, user: str, max_tokens: int = 4000) -> str:
+def ask_claude(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
     client = get_claude_client()
     response = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
+        temperature=temperature,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
     return response.content[0].text
 
 
-def ask_claude_json(system: str, user: str, max_tokens: int = 4000) -> dict:
-    raw = ask_claude(system, user, max_tokens)
+def ask_claude_json(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3) -> dict:
+    raw = ask_claude(system, user, max_tokens, temperature)
     cleaned = re.sub(r"```json\s*", "", raw)
     cleaned = re.sub(r"```\s*", "", cleaned)
     cleaned = cleaned.strip()
@@ -110,13 +111,11 @@ def strip_markdown(text: str) -> str:
 
 
 def strip_duplicate_heading(text: str, heading: str) -> str:
-    """Remove duplicate heading at the start of AI-generated section text."""
     lines = text.strip().split("\n")
     if not lines:
         return text
     first = lines[0].strip().lower()
     heading_clean = heading.strip().lower()
-    # Remove leading numbers like "1." "2." etc
     first_no_num = re.sub(r"^\d+[\.\)]\s*", "", first)
     heading_no_num = re.sub(r"^\d+[\.\)]\s*", "", heading_clean)
     if first_no_num == heading_no_num or first == heading_no_num:
@@ -128,7 +127,6 @@ def strip_duplicate_heading(text: str, heading: str) -> str:
 # REGION MAPPING (for colored scatterplots)
 # ============================================================================
 def fetch_country_regions() -> dict:
-    """Fetch country-to-region mapping from World Bank API."""
     try:
         resp = requests.get(
             "https://api.worldbank.org/v2/country?format=json&per_page=300",
@@ -166,7 +164,6 @@ REGION_COLORS = {
 # CHART GENERATION (ggplot-style)
 # ============================================================================
 def setup_ggplot_style():
-    """Configure matplotlib to look like ggplot2."""
     plt.rcParams.update({
         "figure.facecolor": "white",
         "axes.facecolor": "#F0F0F0",
@@ -187,7 +184,6 @@ def setup_ggplot_style():
 
 
 def generate_scatterplot(df: pd.DataFrame, plan: dict, output_dir: str) -> str:
-    """Generate a ggplot-style scatterplot colored by region."""
     setup_ggplot_style()
     print("  📊 Generating scatterplot...")
 
@@ -195,7 +191,6 @@ def generate_scatterplot(df: pd.DataFrame, plan: dict, output_dir: str) -> str:
     df_plot = df.copy()
     df_plot["region"] = df_plot["country"].map(regions).fillna("Other")
 
-    # Aggregate to country means for cleaner plot
     country_means = df_plot.groupby(["country", "region"]).agg(
         x=("x", "mean"), y=("y", "mean")
     ).reset_index()
@@ -210,7 +205,6 @@ def generate_scatterplot(df: pd.DataFrame, plan: dict, output_dir: str) -> str:
                 c=color, label=region, alpha=0.7, s=35, edgecolors="white", linewidths=0.4,
             )
 
-    # Regression line
     valid = country_means.dropna(subset=["x", "y"])
     if len(valid) > 2:
         z = np.polyfit(valid["x"], valid["y"], 1)
@@ -232,7 +226,6 @@ def generate_scatterplot(df: pd.DataFrame, plan: dict, output_dir: str) -> str:
 
 
 def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str:
-    """Generate a coefficient comparison plot across specifications."""
     setup_ggplot_style()
     print("  📊 Generating coefficient plot...")
 
@@ -250,7 +243,6 @@ def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str
         labels.append("Fixed Effects")
 
     if not specs:
-        # Fallback to simple OLS
         if "ols" in results and "error" not in results["ols"]:
             r = results["ols"]
             specs.append((r["coefficient"], r["std_error"], r["p_value"]))
@@ -263,7 +255,7 @@ def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str
 
     y_pos = range(len(specs))
     coefs = [s[0] for s in specs]
-    errors = [s[1] * 1.96 for s in specs]  # 95% CI
+    errors = [s[1] * 1.96 for s in specs]
     colors = ["#2A9D8F" if s[2] < 0.05 else "#E76F51" for s in specs]
 
     ax.barh(y_pos, coefs, xerr=errors, color=colors, alpha=0.8, height=0.5,
@@ -274,7 +266,6 @@ def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str
     ax.set_xlabel(f"Effect on {plan['y_label']}")
     ax.set_title("Coefficient Estimates (95% CI)", fontweight="bold")
 
-    # Color legend
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor="#2A9D8F", label="p < 0.05"),
@@ -291,17 +282,14 @@ def generate_coefficient_plot(results: dict, plan: dict, output_dir: str) -> str
 
 
 # ============================================================================
-# TAUTOLOGY GUARD (v4.2 — dynamic)
+# TAUTOLOGY GUARD
 # ============================================================================
 def check_tautology(x_code: str, y_code: str) -> bool:
-    """Check if X and Y are from the same indicator family."""
     if x_code == y_code:
         return True
-    # Check hardcoded families
     for prefix in INDICATOR_FAMILIES:
         if x_code.startswith(prefix) and y_code.startswith(prefix):
             return True
-    # Dynamic check: if the first two segments match (e.g., SI.POV.xxx and SI.POV.yyy)
     x_parts = x_code.split(".")
     y_parts = y_code.split(".")
     if len(x_parts) >= 2 and len(y_parts) >= 2:
@@ -311,10 +299,9 @@ def check_tautology(x_code: str, y_code: str) -> bool:
 
 
 # ============================================================================
-# INDICATOR VALIDATION (v4.2 — new)
+# INDICATOR VALIDATION
 # ============================================================================
 def validate_indicator(indicator: str) -> dict:
-    """Check if a World Bank indicator exists and has data. Returns info dict or None."""
     try:
         resp = requests.get(
             f"https://api.worldbank.org/v2/indicator/{indicator}?format=json",
@@ -335,7 +322,6 @@ def validate_indicator(indicator: str) -> dict:
 
 
 def check_data_availability(indicator: str, start_year: int = 2000, end_year: int = 2023) -> int:
-    """Quick check: how many data points does this indicator have? Returns count."""
     try:
         resp = requests.get(
             f"https://api.worldbank.org/v2/country/all/indicator/{indicator}"
@@ -352,7 +338,6 @@ def check_data_availability(indicator: str, start_year: int = 2000, end_year: in
 
 
 def search_wb_indicators(keyword: str, max_results: int = 5) -> list:
-    """Search World Bank for indicators matching a keyword."""
     try:
         resp = requests.get(
             f"https://api.worldbank.org/v2/indicator?format=json&per_page=100",
@@ -362,7 +347,6 @@ def search_wb_indicators(keyword: str, max_results: int = 5) -> list:
         data = resp.json()
         if len(data) < 2 or not data[1]:
             return []
-        # Filter by keyword in name
         kw = keyword.lower()
         matches = []
         for ind in data[1]:
@@ -378,7 +362,6 @@ def search_wb_indicators(keyword: str, max_results: int = 5) -> list:
 
 
 def validate_and_fix_indicators(plan: dict) -> dict:
-    """Validate all indicators in the plan and fix any that are invalid or sparse."""
     print("  🔍 Validating indicators...")
 
     for var_key, label_key in [("independent_var", "x_label"), ("dependent_var", "y_label")]:
@@ -387,7 +370,6 @@ def validate_and_fix_indicators(plan: dict) -> dict:
 
         if not info:
             print(f"    ⚠️  {code} does not exist in World Bank!")
-            # Ask Claude to suggest an alternative
             alt = ask_claude_json(
                 system="You are a World Bank data expert. Suggest a VALID World Bank indicator code. Return JSON: {\"code\": \"XX.XXX.XXX\", \"name\": \"description\"}",
                 user=f"The indicator {code} ({plan[label_key]}) does not exist. Suggest a valid alternative that measures the same concept.",
@@ -396,7 +378,6 @@ def validate_and_fix_indicators(plan: dict) -> dict:
             plan[label_key] = alt.get("name", plan[label_key])
             print(f"    ✅ Replaced with: {plan[var_key]} ({plan[label_key]})")
         else:
-            # Check data availability
             count = check_data_availability(code, plan.get("start_year", 2000), plan.get("end_year", 2023))
             if count < 200:
                 print(f"    ⚠️  {code} has very sparse data ({count} points). Asking AI for denser alternative...")
@@ -480,7 +461,6 @@ Return JSON:
         user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.',
     )
 
-    # Tautology check (v4.1)
     if check_tautology(plan["independent_var"], plan["dependent_var"]):
         print(f"  ⚠️  TAUTOLOGY DETECTED: {plan['independent_var']} -> {plan['dependent_var']}")
 
@@ -503,7 +483,6 @@ Return JSON:
 
         print(f"  ✅ Corrected to: {plan['x_label']} -> {plan['y_label']}")
 
-    # Control variable check
     if len(plan.get("control_vars", [])) < 2:
         default_controls = [
             {"code": "NY.GDP.PCAP.PP.KD", "label": "GDP per capita (PPP)", "rationale": "Income level confounder"},
@@ -523,7 +502,6 @@ Return JSON:
     print(f"  -> Controls: {', '.join(c['label'] for c in plan['control_vars'])}")
     print(f"  -> Years: {plan['start_year']}-{plan['end_year']}")
 
-    # Validate indicators exist and have enough data (v4.2)
     plan = validate_and_fix_indicators(plan)
 
     return plan
@@ -553,7 +531,6 @@ class WorldBankFetcher:
                 f"{self.BASE_URL}/country/all/indicator/{indicator}"
                 f"?date={start_year}:{end_year}&format=json&per_page=1000&page={page}"
             )
-            # Retry up to 3 times per page
             resp_data = None
             for attempt in range(3):
                 try:
@@ -1038,7 +1015,6 @@ class PaperWriter:
         fe = self.results.get("fixed_effects", {})
         corr = self.results.get("correlation", {})
 
-        # Prefer controlled results for prompts
         main_result = ols_c if ols_c and "error" not in ols_c else self.results.get("ols", {})
         fe_result = fe if fe and "error" not in fe else {}
 
@@ -1154,13 +1130,11 @@ ADDITIONAL PROOFREADING RULES:
 
     proofread_text = strip_markdown(proofread_text)
 
-    # Parse back into sections
     improved = {}
     for name in sections:
         marker = f"[{name.upper()}]"
         if marker in proofread_text:
             start = proofread_text.index(marker) + len(marker)
-            # Find next marker or end
             next_start = len(proofread_text)
             for other_name in sections:
                 other_marker = f"[{other_name.upper()}]"
@@ -1168,7 +1142,7 @@ ADDITIONAL PROOFREADING RULES:
                     next_start = min(next_start, proofread_text.index(other_marker))
             text = proofread_text[start:next_start].strip()
             text = text.lstrip("-").strip()
-            if len(text) > 50:  # Only use if substantial
+            if len(text) > 50:
                 improved[name] = text
                 print(f"  ✅ Proofread: {name}")
             else:
@@ -1184,12 +1158,10 @@ ADDITIONAL PROOFREADING RULES:
 # ============================================================================
 class DocumentAssembler:
     def _add_table(self, doc, headers, rows, col_widths=None):
-        """Add a formatted table to the document."""
         table = doc.add_table(rows=1 + len(rows), cols=len(headers))
         table.style = "Table Grid"
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-        # Header row
         for i, h in enumerate(headers):
             cell = table.rows[0].cells[i]
             cell.text = ""
@@ -1198,7 +1170,6 @@ class DocumentAssembler:
             run.font.size = Pt(9)
             run.font.bold = True
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            # Light gray background
             shading = cell._element.get_or_add_tcPr()
             shading_elm = shading.makeelement(qn("w:shd"), {
                 qn("w:val"): "clear",
@@ -1207,7 +1178,6 @@ class DocumentAssembler:
             })
             shading.append(shading_elm)
 
-        # Data rows
         for ri, row in enumerate(rows):
             for ci, val in enumerate(row):
                 cell = table.rows[ri + 1].cells[ci]
@@ -1222,10 +1192,9 @@ class DocumentAssembler:
                 for row in table.rows:
                     row.cells[i].width = Inches(w)
 
-        doc.add_paragraph("")  # spacing
+        doc.add_paragraph("")
 
     def _add_descriptive_table(self, doc, results):
-        """Add Table 1: Descriptive Statistics."""
         desc = results.get("descriptive", {})
         if not desc:
             return
@@ -1255,7 +1224,6 @@ class DocumentAssembler:
             self._add_table(doc, headers, rows, [1.2, 0.7, 1.0, 1.0, 1.0, 1.0])
 
     def _add_regression_table(self, doc, results, plan):
-        """Add Table 2: Regression Results."""
         doc.add_paragraph("")
         p = doc.add_paragraph()
         run = p.add_run("Table 2: Regression Results")
@@ -1289,7 +1257,6 @@ class DocumentAssembler:
 
         self._add_table(doc, headers, rows, [1.8, 1.8, 1.8])
 
-        # Significance note
         p = doc.add_paragraph()
         run = p.add_run("Notes: * p < 0.05, ** p < 0.01, *** p < 0.001. Standard errors in parentheses.")
         run.font.size = Pt(8)
@@ -1305,19 +1272,16 @@ class DocumentAssembler:
 
         doc = Document()
 
-        # Set default font
         style = doc.styles["Normal"]
         style.font.name = "Times New Roman"
         style.font.size = Pt(11)
 
-        # Title
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(title)
         run.font.size = Pt(16)
         run.font.bold = True
 
-        # Date
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(f"Generated by Empirica | {datetime.now().strftime('%B %d, %Y')}")
@@ -1326,7 +1290,6 @@ class DocumentAssembler:
 
         doc.add_paragraph("")
 
-        # Sections
         headings = {
             "abstract": "Abstract",
             "introduction": "1. Introduction",
@@ -1350,10 +1313,8 @@ class DocumentAssembler:
                     p = doc.add_paragraph(para)
                     p.style.font.size = Pt(11)
 
-            # Insert descriptive stats table after methodology heading
             if key == "methodology_results":
                 self._add_descriptive_table(doc, all_results)
-                # Insert scatterplot
                 if scatterplot_path and os.path.exists(scatterplot_path):
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1366,10 +1327,8 @@ class DocumentAssembler:
                     run.add_picture(scatterplot_path, width=Inches(5.5))
                     doc.add_paragraph("")
 
-                # Insert regression table
                 self._add_regression_table(doc, all_results, plan)
 
-                # Insert coefficient plot
                 if coeff_plot_path and os.path.exists(coeff_plot_path):
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1382,7 +1341,6 @@ class DocumentAssembler:
                     run.add_picture(coeff_plot_path, width=Inches(4.5))
                     doc.add_paragraph("")
 
-        # References
         if literature:
             doc.add_heading("References", level=1)
             for art in literature:
