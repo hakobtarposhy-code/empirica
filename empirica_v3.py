@@ -1,7 +1,10 @@
 # ============================================================================
-# EMPIRICA v4.3 — Complete Research Pipeline
+# EMPIRICA v4.4 — Complete Research Pipeline
 # ============================================================================
-# Deployment-ready. No hardcoded API keys. No Colab-specific code.
+# Changes from v4.3:
+#   1. Model upgrade: claude-sonnet-4-5-20250929 (Sonnet 4.5)
+#   2. Extended thinking for hypothesis parsing, data review, results review
+#   3. Literature search: 15 SS + 10 SS broad + 10 PM + 5 PM broad = 20-30+ papers
 #
 # Usage:
 #   As module (from Streamlit/app.py):
@@ -45,7 +48,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"          # ← CHANGE 1: Sonnet 4.5
 OUTPUT_DIR = "output"
 
 INDICATOR_FAMILIES = {
@@ -67,20 +70,37 @@ def get_claude_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
-def ask_claude(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
+def ask_claude(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3,
+               extended_thinking: bool = False, thinking_budget: int = 10000) -> str:
+    """Call Claude API. If extended_thinking=True, uses thinking with given budget."""
     client = get_claude_client()
-    response = client.messages.create(
+
+    kwargs = dict(
         model=CLAUDE_MODEL,
-        max_tokens=max_tokens,
-        temperature=temperature,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    return response.content[0].text
+
+    if extended_thinking:                              # ← CHANGE 2: extended thinking
+        kwargs["temperature"] = 1                      #   thinking requires temperature=1
+        kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        kwargs["max_tokens"] = max_tokens + thinking_budget
+    else:
+        kwargs["temperature"] = temperature
+        kwargs["max_tokens"] = max_tokens
+
+    response = client.messages.create(**kwargs)
+
+    # Extract text (skip thinking blocks)
+    for block in response.content:
+        if block.type == "text":
+            return block.text
+    return ""
 
 
-def ask_claude_json(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3) -> dict:
-    raw = ask_claude(system, user, max_tokens, temperature)
+def ask_claude_json(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.3,
+                    extended_thinking: bool = False, thinking_budget: int = 10000) -> dict:
+    raw = ask_claude(system, user, max_tokens, temperature, extended_thinking, thinking_budget)
     cleaned = re.sub(r"```json\s*", "", raw)
     cleaned = re.sub(r"```\s*", "", cleaned)
     cleaned = cleaned.strip()
@@ -406,10 +426,10 @@ Return JSON: {"code": "XX.XXX.XXX", "name": "description", "reasoning": "why thi
 
 
 # ============================================================================
-# AGENT 1: HYPOTHESIS PARSER (AI)
+# AGENT 1: HYPOTHESIS PARSER (AI — extended thinking)
 # ============================================================================
 def ai_parse_hypothesis(hypothesis_text: str) -> dict:
-    print("\n🧠 AGENT 1: Parsing hypothesis with AI...")
+    print("\n🧠 AGENT 1: Parsing hypothesis with AI (extended thinking)...")
 
     plan = ask_claude_json(
         system="""You are a research methodology expert with deep knowledge of the World Bank's data catalog (16,000+ indicators).
@@ -454,11 +474,15 @@ Return JSON:
     ],
     "start_year": 2000,
     "end_year": 2023,
-    "pubmed_query": "search query for PubMed",
-    "semantic_scholar_query": "search query for Semantic Scholar",
+    "pubmed_query": "search query for PubMed (focused)",
+    "pubmed_query_broad": "broader/different-angle PubMed query",
+    "semantic_scholar_query": "search query for Semantic Scholar (focused)",
+    "semantic_scholar_query_broad": "broader/different-angle Semantic Scholar query",
     "reasoning": "why these indicators are the best choice"
 }""",
-        user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.',
+        user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.\nAlso generate TWO search queries per database — one focused, one broader — to maximize literature coverage.',
+        extended_thinking=True,           # ← CHANGE 2: thinking ON for Agent 1
+        thinking_budget=10000,
     )
 
     if check_tautology(plan["independent_var"], plan["dependent_var"]):
@@ -578,7 +602,7 @@ class WorldBankFetcher:
 class SemanticScholarSearcher:
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
 
-    def search(self, query: str, max_results: int = 8) -> list:
+    def search(self, query: str, max_results: int = 15) -> list:   # ← CHANGE 3: 15 default
         papers = []
         for attempt in range(3):
             try:
@@ -632,7 +656,7 @@ class SemanticScholarSearcher:
 class PubMedSearcher:
     BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
-    def search(self, query: str, max_results: int = 5) -> list:
+    def search(self, query: str, max_results: int = 10) -> list:    # ← CHANGE 3: 10 default
         print(f"  📖 PubMed search: {query}")
         try:
             search_resp = requests.get(
@@ -682,36 +706,66 @@ class PubMedSearcher:
 
 
 class LiteratureSearcher:
+    """Runs dual queries on both Semantic Scholar and PubMed for 20-30+ papers."""
     def __init__(self):
         self.ss = SemanticScholarSearcher()
         self.pm = PubMedSearcher()
 
-    def search(self, ss_query: str, pm_query: str) -> list:
-        print("\n📚 AGENT 2b: Searching literature...")
-        ss_results = self.ss.search(ss_query)
-        time.sleep(1)
-        pm_results = self.pm.search(pm_query)
+    def search(self, plan: dict) -> list:                          # ← CHANGE 3: dual queries
+        print("\n📚 AGENT 2b: Searching literature (dual queries)...")
 
+        all_articles = []
+
+        # --- Semantic Scholar: focused query (15 papers) ---
+        ss_query = plan.get("semantic_scholar_query", plan["statement"])
+        all_articles.extend(self.ss.search(ss_query, max_results=15))
+        time.sleep(1)
+
+        # --- Semantic Scholar: broad query (10 papers, different angle) ---
+        ss_broad = plan.get("semantic_scholar_query_broad", "")
+        if ss_broad and ss_broad != ss_query:
+            print("  📖 Semantic Scholar (broad query)...")
+            all_articles.extend(self.ss.search(ss_broad, max_results=10))
+            time.sleep(1)
+
+        # --- PubMed: focused query (10 papers) ---
+        pm_query = plan.get("pubmed_query", plan["statement"])
+        all_articles.extend(self.pm.search(pm_query, max_results=10))
+        time.sleep(1)
+
+        # --- PubMed: broad query (5 papers) ---
+        pm_broad = plan.get("pubmed_query_broad", "")
+        if pm_broad and pm_broad != pm_query:
+            print("  📖 PubMed (broad query)...")
+            all_articles.extend(self.pm.search(pm_broad, max_results=5))
+
+        # Deduplicate by DOI and title
         seen_dois = set()
+        seen_titles = set()
         combined = []
-        for article in ss_results + pm_results:
+        for article in all_articles:
             doi = article.get("doi", "")
+            title_lower = article.get("title", "").lower().strip()
             if doi and doi in seen_dois:
+                continue
+            if title_lower and title_lower in seen_titles:
                 continue
             if doi:
                 seen_dois.add(doi)
+            if title_lower:
+                seen_titles.add(title_lower)
             combined.append(article)
 
         combined.sort(key=lambda a: a.get("citations", 0), reverse=True)
-        print(f"  ✅ {len(combined)} unique articles found")
+        print(f"  ✅ {len(combined)} unique articles found (target: 20+)")
         return combined
 
 
 # ============================================================================
-# AGENT 3: DATA REVIEWER (AI)
+# AGENT 3: DATA REVIEWER (AI — extended thinking)
 # ============================================================================
 def ai_review_data(df: pd.DataFrame, plan: dict) -> dict:
-    print("\n🔍 AGENT 3: AI reviewing data quality...")
+    print("\n🔍 AGENT 3: AI reviewing data quality (extended thinking)...")
 
     summary = {
         "rows": len(df),
@@ -743,6 +797,8 @@ Return JSON:
     "warnings": []
 }""",
         user=f"Hypothesis: {plan['statement']}\n\n{json.dumps(summary, indent=2)}",
+        extended_thinking=True,           # ← CHANGE 2: thinking ON for Agent 3
+        thinking_budget=8000,
     )
 
     print(f"  -> Assessment: {review.get('assessment', 'N/A')}")
@@ -902,10 +958,10 @@ class StatisticsEngine:
 
 
 # ============================================================================
-# AGENT 5: RESULTS INTERPRETER (AI)
+# AGENT 5: RESULTS INTERPRETER (AI — extended thinking)
 # ============================================================================
 def ai_interpret_results(results: dict, plan: dict) -> dict:
-    print("\n⚖️ AGENT 5: AI interpreting results...")
+    print("\n⚖️ AGENT 5: AI interpreting results (extended thinking)...")
     interpretation = ask_claude_json(
         system="""You are an econometrics expert. Given statistical results, provide an honest assessment.
 If R2 is 0.04, say "very weak." Do NOT oversell.
@@ -920,6 +976,8 @@ Return JSON:
     "additional_tests_suggested": []
 }""",
         user=f"Hypothesis: {plan['statement']}\n\nResults:\n{json.dumps(results, indent=2, default=str)}",
+        extended_thinking=True,           # ← CHANGE 2: thinking ON for Agent 5
+        thinking_budget=8000,
     )
     print(f"  -> {interpretation.get('strength', '?')} | {interpretation.get('recommended_tone', '?')}")
     print(f"  -> {interpretation.get('main_finding', 'N/A')}")
@@ -927,7 +985,7 @@ Return JSON:
 
 
 # ============================================================================
-# AGENT 6: PAPER WRITER (AI — improved with McCloskey rules)
+# AGENT 6: PAPER WRITER (AI — McCloskey rules, NO extended thinking)
 # ============================================================================
 WRITING_RULES = """WRITING STYLE (follow strictly):
 - Never start with "This paper" or "This study". Hook the reader with the puzzle or finding.
@@ -958,9 +1016,10 @@ class PaperWriter:
             self.cites = "No verified citations available. Do not cite any sources."
             return
         lines = ["VERIFIED CITATIONS - you may ONLY cite these:"]
-        for i, a in enumerate(self.literature[:15]):
+        for i, a in enumerate(self.literature[:25]):   # ← show up to 25 to writer
             lines.append(f"  {i+1}. {a['authors_short']} ({a['year']}). \"{a['title']}\". {a['journal']}.")
-        lines.append("\nCRITICAL: Do NOT cite any source not listed above. No Becker, no Lucas, no Acemoglu unless listed.")
+        lines.append(f"\nYou have {len(self.literature)} papers total. CITE AS MANY AS RELEVANT.")
+        lines.append("CRITICAL: Do NOT cite any source not listed above. No Becker, no Lucas, no Acemoglu unless listed.")
         self.cites = "\n".join(lines)
 
     def _verify_citations(self, text):
@@ -1001,7 +1060,7 @@ class PaperWriter:
         sections = {}
         for name, (sys_p, usr_p) in self._prompts().items():
             print(f"  📝 Writing: {name}...")
-            raw = ask_claude(sys_p, usr_p, 3000)
+            raw = ask_claude(sys_p, usr_p, 3000)       # no extended thinking for writing
             text = strip_markdown(raw)
             text = self._verify_citations(text)
             text = strip_duplicate_heading(text, name.replace("_", " "))
@@ -1043,7 +1102,7 @@ Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 Write the introduction. Hook the reader with a concrete fact or puzzle. Explain why the question matters using real-world stakes. Briefly preview the approach and finding. Do NOT include a roadmap paragraph ("Section 2 reviews...").""",
             ),
             "literature_review": (
-                f"You are an economics journal writer. Write ONLY a literature review (400-600 words). {WRITING_RULES}\n{self.cites}\n\nCRITICAL: Only cite papers from the verified list. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries. Identify 2-3 perspectives or tensions in the literature.",
+                f"You are an economics journal writer. Write ONLY a literature review (500-700 words). {WRITING_RULES}\n{self.cites}\n\nCRITICAL: You have {len(self.literature)} verified papers. Cite at least 12-15 of them. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries.",
                 f"""Hypothesis: {self.plan['statement']}
 
 Write the literature review. Do NOT summarize each paper sequentially. Instead:
@@ -1052,6 +1111,7 @@ Write the literature review. Do NOT summarize each paper sequentially. Instead:
 3. Note where evidence conflicts or where gaps exist
 4. Connect to how your analysis addresses these gaps
 
+You have {len(self.literature)} verified papers to draw from. Cite as many as relevant (aim for 12-15).
 Avoid starting every paragraph with an author name. Lead with the idea, then cite.""",
             ),
             "methodology_results": (
@@ -1098,7 +1158,7 @@ Write the conclusion. Be honest. If evidence is weak, say so directly.
 
 
 # ============================================================================
-# AGENT 6b: PROOFREADER (AI — applies McCloskey rules)
+# AGENT 6b: PROOFREADER (AI — NO extended thinking)
 # ============================================================================
 def ai_proofread(sections: dict) -> dict:
     print("\n🔎 AGENT 6b: Proofreading all sections...")
@@ -1440,14 +1500,14 @@ print("Done.")
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v4.3")
+    print("  EMPIRICA v4.4")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print("=" * 60)
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Agent 1: Parse
+    # Agent 1: Parse (extended thinking)
     plan = ai_parse_hypothesis(hypothesis)
 
     # Agent 2a: Fetch data
@@ -1474,14 +1534,11 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
 
     print(f"\n  ✅ Merged: {len(df)} rows, {df['country'].nunique()} countries")
 
-    # Agent 2b: Literature
+    # Agent 2b: Literature (dual queries for 20+ papers)
     lit = LiteratureSearcher()
-    literature = lit.search(
-        plan.get("semantic_scholar_query", plan["statement"]),
-        plan.get("pubmed_query", plan["statement"]),
-    )
+    literature = lit.search(plan)
 
-    # Agent 3: Review data
+    # Agent 3: Review data (extended thinking)
     review = ai_review_data(df, plan)
     df = apply_cleaning(df, review)
     if len(df) < 10:
@@ -1505,14 +1562,14 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     except Exception as e:
         print(f"  ⚠️  Coefficient plot failed: {e}")
 
-    # Agent 5: Interpret
+    # Agent 5: Interpret (extended thinking)
     interpretation = ai_interpret_results(results, plan)
 
-    # Agent 6: Write
+    # Agent 6: Write (no extended thinking — just good prompts)
     writer = PaperWriter(plan, results, interpretation, literature)
     sections = writer.write_all()
 
-    # Agent 6b: Proofread
+    # Agent 6b: Proofread (no extended thinking)
     sections = ai_proofread(sections)
 
     # Agent 7: Assemble
@@ -1525,7 +1582,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v4.3 COMPLETE")
+    print("  ✅ EMPIRICA v4.4 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
