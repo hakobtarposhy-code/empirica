@@ -1110,13 +1110,23 @@ class StatisticsEngine:
 # ============================================================================
 # AGENT 5: RESULTS INTERPRETER (AI — extended thinking)
 # ============================================================================
-def ai_interpret_results(results: dict, plan: dict) -> dict:
+def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 5) -> dict:
     print("\n⚖️ AGENT 5: AI interpreting results (extended thinking)...")
+
+    advocacy_block = ""
+    if advocacy_angle and advocacy_angle.strip():
+        if advocacy_temperature <= 3:
+            advocacy_block = f'\nNote: the author leans toward "{advocacy_angle.strip()}". Keep interpretation honest but when results are ambiguous, lean slightly toward this framing.'
+        elif advocacy_temperature <= 6:
+            advocacy_block = f'\nNote: the author\'s perspective is "{advocacy_angle.strip()}". When results support this view, emphasize it. When they don\'t, frame as "nuanced" rather than contradictory. Still be honest about effect sizes.'
+        else:
+            advocacy_block = f'\nNote: the author strongly advocates for "{advocacy_angle.strip()}". Frame the main_finding to support this perspective where possible. Find the strongest angle. Still report actual numbers honestly.'
+
     interpretation = ask_claude_json(
-        system="""You are an econometrics expert. Given statistical results, provide an honest assessment.
-If R2 is 0.04, say "very weak." Do NOT oversell.
+        system=f"""You are an econometrics expert. Given statistical results, provide an honest assessment.
+If R2 is 0.04, say "very weak." Do NOT oversell.{advocacy_block}
 Return JSON:
-{
+{{
     "strength": "strong / moderate / weak / very weak / none",
     "direction": "positive / negative / unclear",
     "confidence": "high / moderate / low",
@@ -1124,7 +1134,7 @@ Return JSON:
     "caveats": ["limitations"],
     "recommended_tone": "confident / cautious / very cautious / skeptical",
     "additional_tests_suggested": []
-}""",
+}}""",
         user=f"Hypothesis: {plan['statement']}\n\nResults:\n{json.dumps(results, indent=2, default=str)}",
         extended_thinking=True,           # ← CHANGE 2: thinking ON for Agent 5
         thinking_budget=8000,
@@ -1153,12 +1163,77 @@ WRITING_RULES = """WRITING STYLE (follow strictly):
 - No markdown formatting whatsoever. No #, **, *, `, $$.
 - Do NOT write a full paper. Write ONLY the section requested."""
 
+
+def build_advocacy_instruction(advocacy_angle: str, advocacy_temperature: int) -> str:
+    """Generate prompt instructions for advocacy framing, scaled by temperature (1-10).
+    Returns empty string if no advocacy angle is set."""
+    if not advocacy_angle or not advocacy_angle.strip():
+        return ""
+
+    angle = advocacy_angle.strip()
+
+    if advocacy_temperature <= 3:
+        # Subtle — barely noticeable lean
+        return f"""
+FRAMING GUIDANCE (subtle):
+The author has a perspective: "{angle}".
+Incorporate this lightly. The paper should read as balanced and academic, but when interpreting
+ambiguous results or choosing which implications to emphasize, lean slightly toward this perspective.
+Still cite counterarguments and acknowledge limitations fully. A careful reader might detect the
+perspective, but it should not feel like advocacy. Data and statistics remain completely untouched."""
+
+    elif advocacy_temperature <= 6:
+        # Moderate — clear perspective but fair
+        return f"""
+FRAMING GUIDANCE (moderate):
+The author's perspective: "{angle}".
+Write with this perspective clearly visible. The introduction should frame the question in a way
+that makes this perspective's importance obvious. The literature review should give more space
+(roughly 60/40) to studies that support this view, while still acknowledging the opposing side.
+When interpreting results, emphasize findings that align with the perspective. The conclusion
+and policy section should argue for this position, but include honest caveats where the evidence
+is weak. The reader should understand the author's position but also trust the honesty of the analysis.
+Data and statistics remain completely untouched — only the narrative framing shifts."""
+
+    elif advocacy_temperature <= 8:
+        # Strong — clear policy argument
+        return f"""
+FRAMING GUIDANCE (strong):
+The author's perspective: "{angle}".
+Write as a policy argument grounded in evidence. The introduction should make a case for why this
+perspective matters urgently. The literature review should lead with and emphasize supporting evidence
+(roughly 75/25 split), mentioning opposing views briefly as "some studies suggest... however."
+Interpret all results through this lens — when a coefficient supports the argument, highlight it;
+when it doesn't, contextualize it ("while the cross-sectional estimate is modest, the fixed-effects
+result points toward..."). The conclusion should be assertive. Policy recommendations should be
+bold and specific, directly advocating for the perspective. Still maintain academic credibility —
+don't fabricate or distort numbers, but make every real finding work as hard as possible for the argument.
+Data and statistics remain completely untouched — only the narrative framing shifts."""
+
+    else:
+        # Maximum — strongest possible advocacy
+        return f"""
+FRAMING GUIDANCE (maximum advocacy):
+The author's perspective: "{angle}".
+Write as a persuasive policy document that happens to use rigorous methodology. Every section should
+advance this argument. The introduction should read as a call to action. The literature review should
+build the case systematically, leading with the strongest supporting evidence and treating opposing
+views as outdated, limited in scope, or methodologically weaker. Interpret every result favorably —
+find the angle that supports the argument. If the overall result is weak, focus on subgroups or
+specifications where it is stronger. The conclusion should be a forceful argument for policy change.
+Policy recommendations should be bold, specific, and urgent.
+CRITICAL: Never fabricate data or misrepresent statistical significance. The numbers stay honest.
+The framing, emphasis, and narrative arc do the persuasion work."""
+
 class PaperWriter:
-    def __init__(self, plan, results, interpretation, literature):
+    def __init__(self, plan, results, interpretation, literature, advocacy_angle="", advocacy_temperature=5):
         self.plan = plan
         self.results = results
         self.interp = interpretation
         self.literature = literature
+        self.advocacy_angle = advocacy_angle
+        self.advocacy_temperature = advocacy_temperature
+        self.advocacy_instruction = build_advocacy_instruction(advocacy_angle, advocacy_temperature)
         self._build_citation_block()
 
     def _build_citation_block(self):
@@ -1227,9 +1302,12 @@ class PaperWriter:
         main_result = ols_c if ols_c and "error" not in ols_c else self.results.get("ols", {})
         fe_result = fe if fe and "error" not in fe else {}
 
+        # Advocacy block — empty string if no angle set
+        adv = self.advocacy_instruction
+
         return {
             "abstract": (
-                f"You are an economics journal writer. Write ONLY an abstract (150-200 words). {WRITING_RULES}\n{self.cites}",
+                f"You are an economics journal writer. Write ONLY an abstract (150-200 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}
 Y: {self.plan['y_label']}
@@ -1242,7 +1320,7 @@ Tone: {self.interp.get('recommended_tone','cautious')}
 Write a concise abstract. Focus on the controlled and fixed-effects results, not bivariate OLS. Start with the finding or puzzle, not "This paper examines".""",
             ),
             "introduction": (
-                f"You are an economics journal writer. Write ONLY an introduction (400-500 words). {WRITING_RULES}\n{self.cites}",
+                f"You are an economics journal writer. Write ONLY an introduction (400-500 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Main finding: {self.interp.get('main_finding','N/A')}
@@ -1252,7 +1330,7 @@ Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 Write the introduction. Hook the reader with a concrete fact or puzzle. Explain why the question matters using real-world stakes. Briefly preview the approach and finding. Do NOT include a roadmap paragraph ("Section 2 reviews...").""",
             ),
             "literature_review": (
-                f"You are an economics journal writer. Write ONLY a literature review (500-700 words). {WRITING_RULES}\n{self.cites}\n\nCRITICAL: You have {len(self.literature)} verified papers. Cite at least 12-15 of them. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries.",
+                f"You are an economics journal writer. Write ONLY a literature review (500-700 words). {WRITING_RULES}{adv}\n{self.cites}\n\nCRITICAL: You have {len(self.literature)} verified papers. Cite at least 12-15 of them. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries.",
                 f"""Hypothesis: {self.plan['statement']}
 
 Write the literature review. Do NOT summarize each paper sequentially. Instead:
@@ -1265,7 +1343,7 @@ You have {len(self.literature)} verified papers to draw from. Cite as many as re
 Avoid starting every paragraph with an author name. Lead with the idea, then cite.""",
             ),
             "methodology_results": (
-                f"You are an economics journal writer. Write ONLY methodology and results (600-800 words). {WRITING_RULES}",
+                f"You are an economics journal writer. Write ONLY methodology and results (600-800 words). {WRITING_RULES}{adv}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']} ({self.plan.get('independent_var') or 'AMECO/' + self.plan.get('ameco_independent', {}).get('dataset', '?')})
 Y: {self.plan['y_label']} ({self.plan.get('dependent_var') or 'AMECO/' + self.plan.get('ameco_dependent', {}).get('dataset', '?')})
@@ -1295,7 +1373,7 @@ Results section:
 - Do not describe what control variables "capture" in the results section. The reader knows.""",
             ),
             "conclusion": (
-                f"You are an economics journal writer. Write ONLY a conclusion (150-250 words). {WRITING_RULES}\n{self.cites}",
+                f"You are an economics journal writer. Write ONLY a conclusion (150-250 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
 Main result (OLS+controls): B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}
@@ -1306,7 +1384,7 @@ Write ONLY the conclusion. Summarize what the analysis found, acknowledge limita
 Do NOT include policy recommendations here — those go in a separate section.""",
             ),
             "policy_implications": (
-                f"You are an economics policy advisor writing for a journal. {WRITING_RULES}\n{self.cites}",
+                f"You are an economics policy advisor writing for a journal. {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
@@ -2032,11 +2110,14 @@ print("Done.")
 # ============================================================================
 # MAIN PIPELINE
 # ============================================================================
-def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
+def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
+                 advocacy_angle: str = "", advocacy_temperature: int = 5):
     print("\n" + "=" * 60)
     print("  EMPIRICA v1.4.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
+    if advocacy_angle:
+        print(f"  Advocacy: {advocacy_angle} (temperature: {advocacy_temperature}/10)")
     print("=" * 60)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -2132,10 +2213,10 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
         print(f"  ⚠️  Coefficient plot failed: {e}")
 
     # Agent 5: Interpret (extended thinking)
-    interpretation = ai_interpret_results(results, plan)
+    interpretation = ai_interpret_results(results, plan, advocacy_angle, advocacy_temperature)
 
     # Agent 6: Write (no extended thinking — just good prompts)
-    writer = PaperWriter(plan, results, interpretation, literature)
+    writer = PaperWriter(plan, results, interpretation, literature, advocacy_angle, advocacy_temperature)
     sections = writer.write_all()
 
     # Agent 6b: Proofread (no extended thinking)
