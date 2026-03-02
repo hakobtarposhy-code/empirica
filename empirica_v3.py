@@ -1110,7 +1110,7 @@ class StatisticsEngine:
 # ============================================================================
 # AGENT 5: RESULTS INTERPRETER (AI — extended thinking)
 # ============================================================================
-def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 5) -> dict:
+def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 1) -> dict:
     print("\n⚖️ AGENT 5: AI interpreting results (extended thinking)...")
 
     advocacy_block = ""
@@ -1147,21 +1147,41 @@ Return JSON:
 # ============================================================================
 # AGENT 6: PAPER WRITER (AI — McCloskey rules, NO extended thinking)
 # ============================================================================
-WRITING_RULES = """WRITING STYLE (follow strictly):
-- Never start with "This paper" or "This study". Hook the reader with the puzzle or finding.
+WRITING_RULES = """WRITING STYLE — ENGAGE THE READER (follow strictly):
+
+RHYTHM AND PACING:
+- Vary sentence length deliberately. Follow a long, complex sentence with a short one. Five words can hit harder than fifty. Then stretch out again. The reader's brain needs rhythm changes to stay alert.
+- Never put two sentences of the same length back-to-back. If you wrote a 25-word sentence, the next should be 8 or 40, not 22.
+- Start paragraphs differently. If one paragraph starts with a noun phrase, start the next with a number, a question, a contrast ("Yet"), or a concrete image. Never start two consecutive paragraphs the same way.
+
+CONCRETENESS AND SURPRISE:
+- Ground abstractions in real places and real numbers. Not "developing countries face fiscal pressures" but "Ethiopia spends $28 per person on health; Switzerland spends $9,674."
+- Lead with what surprises. If the result contradicts the hypothesis, say so in the first sentence of that paragraph. If two specifications disagree, that tension IS the story.
+- When citing a number, make the reader feel its size. "0.14 years" means nothing. "Roughly seven weeks of additional life for each percentage point of urbanization" means something.
+
+TENSION AND FORWARD PULL:
+- Every paragraph should make the reader want to read the next one. End paragraphs with an unresolved question, a complication, or a preview of what comes next.
+- The literature review is a DEBATE, not a bibliography. Set up genuine disagreement. "X argues A; but Y found the opposite; and Z says both miss the point because..." The reader should feel the intellectual tension.
+- When evidence conflicts, lean into the conflict. Don't smooth it over. The conflict is interesting.
+
+VOICE AND DIRECTNESS:
 - Use active verbs: "We estimate" not "estimation was performed". Find the action, express it as a verb.
-- Be concrete: "a $429 increase" not "a statistically significant positive association".
-- No boilerplate: skip "the rest of this paper is organized as follows" or table-of-contents paragraphs.
-- No elegant variation: if you call it "electricity access" once, don't switch to "electrification rate" then "energy provision" then "power availability". Pick one term and stick with it.
-- "Significant" means statistically significant ONLY. For importance use "large", "substantial", "meaningful".
-- Keep causality language honest: if the design only shows correlation, use "is associated with", "suggests", never "causes" or "leads to".
-- No em dashes. Use commas, semicolons, or separate sentences.
+- Never start with "This paper" or "This study". Start with the puzzle, the finding, or the stakes.
+- Write as if explaining to a sharp colleague over coffee, not performing for a tenure committee. Be direct. Be honest. Be interesting.
 - No five-dollar words when plain ones work: "use" not "utilize", "start" not "commence", "show" not "demonstrate".
-- Avoid "this", "these", "those" as much as possible. Use "the" or repeat the noun.
-- Write as if explaining to a smart colleague over coffee, not performing for a tenure committee.
-- Equations: wrap each equation in [EQ]...[/EQ] markers on its own line. Use Greek Unicode (α, β, γ, ε, μ, σ, δ, λ, θ, ρ, τ, φ) and _{subscript} for subscripts. Example: [EQ]Y_{it} = α + β × X_{it} + γ Z_{it} + ε_{it}[/EQ]
+- "Significant" means statistically significant ONLY. For importance use "large", "substantial", "meaningful".
+- Keep causality language honest: if the design only shows correlation, say "is associated with", never "causes" or "leads to". But do not hedge EVERY sentence. State what the data clearly show with confidence; hedge only where uncertainty genuinely exists.
+
+THINGS TO NEVER DO:
+- No boilerplate. No "the rest of this paper is organized as follows." No "it is important to note that." No "in the context of." No "a growing body of literature." Cut every sentence that exists only to fill space.
+- No elegant variation: if you call it "electricity access" once, don't switch to "electrification rate" then "energy provision." Pick one term and stick with it.
+- No em dashes. Use commas, semicolons, or separate sentences.
+- Avoid "this", "these", "those" as much as possible. Repeat the noun or use "the".
 - No markdown formatting whatsoever. No #, **, *, `, $$.
-- Do NOT write a full paper. Write ONLY the section requested."""
+- Do NOT write a full paper. Write ONLY the section requested.
+
+EQUATIONS:
+- Wrap each equation in [EQ]...[/EQ] markers on its own line. Use Greek Unicode (α, β, γ, ε, μ, σ, δ, λ, θ, ρ, τ, φ) and _{subscript} for subscripts. Example: [EQ]Y_{it} = α + β × X_{it} + γ Z_{it} + ε_{it}[/EQ]"""
 
 
 def build_advocacy_instruction(advocacy_angle: str, advocacy_temperature: int) -> str:
@@ -1226,7 +1246,7 @@ CRITICAL: Never fabricate data or misrepresent statistical significance. The num
 The framing, emphasis, and narrative arc do the persuasion work."""
 
 class PaperWriter:
-    def __init__(self, plan, results, interpretation, literature, advocacy_angle="", advocacy_temperature=5):
+    def __init__(self, plan, results, interpretation, literature, advocacy_angle="", advocacy_temperature=1):
         self.plan = plan
         self.results = results
         self.interp = interpretation
@@ -1307,7 +1327,7 @@ class PaperWriter:
 
         return {
             "abstract": (
-                f"You are an economics journal writer. Write ONLY an abstract (150-200 words). {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are an economics journal writer known for clear, compelling prose. Write ONLY an abstract (150-200 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}
 Y: {self.plan['y_label']}
@@ -1317,33 +1337,50 @@ N={desc.get('n_obs','N/A')} observations, {desc.get('n_countries','N/A')} countr
 Interpretation: {self.interp.get('main_finding','N/A')}
 Tone: {self.interp.get('recommended_tone','cautious')}
 
-Write a concise abstract. Focus on the controlled and fixed-effects results, not bivariate OLS. Start with the finding or puzzle, not "This paper examines".""",
+Write a concise abstract. Open with a one-sentence hook: the puzzle, the conventional wisdom, or the finding itself. NOT "This paper examines." The reader should know within two sentences whether the hypothesis held up, and what the coefficient means in plain terms (translate it: "each additional X is associated with Y more years/dollars/points"). End with one sentence on what the finding implies for policy or future research.""",
             ),
             "introduction": (
-                f"You are an economics journal writer. Write ONLY an introduction (400-500 words). {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are an economics journal writer known for clear, compelling prose. Write ONLY an introduction (400-500 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Main finding: {self.interp.get('main_finding','N/A')}
 Tone: {self.interp.get('recommended_tone','cautious')}
 Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 
-Write the introduction. Hook the reader with a concrete fact or puzzle. Explain why the question matters using real-world stakes. Briefly preview the approach and finding. Do NOT include a roadmap paragraph ("Section 2 reviews...").""",
+Write the introduction in 3-4 paragraphs:
+
+PARAGRAPH 1 — THE HOOK: Open with a concrete, vivid fact that makes the reader care. A specific country example, a striking number, a real policy debate. NOT a generic statement like "X is an important topic." Make the reader think "huh, I didn't know that" or "wait, really?" within the first two sentences. Then state the question clearly.
+
+PARAGRAPH 2 — THE STAKES: Why does the answer matter? Who needs to know? Be specific. Name a real policy trade-off, a real budget decision, a real debate between economists. If a government gets the answer wrong, what happens?
+
+PARAGRAPH 3 — WHAT WE DO: Describe the approach briefly. Mention the data scope ({desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}). Preview the finding — give away the punchline. Academic readers want to know the answer upfront, not be led through a mystery novel.
+
+Do NOT include a roadmap paragraph ("Section 2 reviews the literature..."). End with the finding, not with organizational scaffolding.""",
             ),
             "literature_review": (
-                f"You are an economics journal writer. Write ONLY a literature review (500-700 words). {WRITING_RULES}{adv}\n{self.cites}\n\nCRITICAL: You have {len(self.literature)} verified papers. Cite at least 12-15 of them. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries.",
+                f"You are an economics journal writer known for clear, compelling prose. Write ONLY a literature review (500-700 words). {WRITING_RULES}{adv}\n{self.cites}\n\nCRITICAL: You have {len(self.literature)} verified papers. Cite at least 12-15 of them. Organize by THEMES and DISAGREEMENTS, not paper-by-paper summaries.",
                 f"""Hypothesis: {self.plan['statement']}
 
-Write the literature review. Do NOT summarize each paper sequentially. Instead:
-1. Identify the main debate or tension in the literature
-2. Group papers by what position they support
-3. Note where evidence conflicts or where gaps exist
-4. Connect to how your analysis addresses these gaps
+Write the literature review as an INTELLECTUAL DEBATE, not a bibliography. The reader should feel tension between competing positions.
 
-You have {len(self.literature)} verified papers to draw from. Cite as many as relevant (aim for 12-15).
-Avoid starting every paragraph with an author name. Lead with the idea, then cite.""",
+STRUCTURE (3-4 paragraphs):
+
+PARAGRAPH 1 — SET UP THE DEBATE: What is the core disagreement in the literature? Frame it as a genuine conflict between two or more positions. "One camp argues X; another finds the opposite; a third says both miss something." Make the reader feel the unresolved tension. Cite 3-4 papers.
+
+PARAGRAPH 2 — THE SUPPORTING EVIDENCE: Papers that support one side. But don't just list them. Show HOW they support the position, and where their evidence is strongest. What methods did they use? What did they find specifically? Cite 4-5 papers.
+
+PARAGRAPH 3 — THE COUNTEREVIDENCE: Papers that push back. Same treatment: specific findings, specific methods, specific numbers where possible. Where does the supporting evidence break down? What do the skeptics point to? Cite 4-5 papers.
+
+PARAGRAPH 4 — THE GAP: What has nobody done yet? What question is still unanswered? This is where YOUR analysis fits in. The gap should feel like a natural opening that the preceding debate created.
+
+CRITICAL RULES:
+- NEVER start a sentence with an author name. Lead with the IDEA, then cite. Not "Smith (2020) finds that..." but "Urbanization appears to lower mortality in middle-income countries (Smith, 2020), but the pattern reverses in..."
+- Every paragraph should end with a complication, a tension, or a question that pulls the reader forward.
+- Cite at least 12 of your {len(self.literature)} papers. Weave them in naturally, often 2-3 per sentence.
+- Use specific findings where possible: "a 2.3-percentage-point reduction" not "a significant effect".""",
             ),
             "methodology_results": (
-                f"You are an economics journal writer. Write ONLY methodology and results (600-800 words). {WRITING_RULES}{adv}",
+                f"You are an economics journal writer known for clear, compelling prose. Write ONLY methodology and results (600-800 words). {WRITING_RULES}{adv}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']} ({self.plan.get('independent_var') or 'AMECO/' + self.plan.get('ameco_independent', {}).get('dataset', '?')})
 Y: {self.plan['y_label']} ({self.plan.get('dependent_var') or 'AMECO/' + self.plan.get('ameco_dependent', {}).get('dataset', '?')})
@@ -1353,38 +1390,43 @@ Source: {"European Commission AMECO database via DBnomics" if self.plan.get('_ac
 RESULTS (focus on controlled and fixed-effects, not bivariate OLS):
 {json.dumps(self.results, indent=2, default=str)}
 
-STRUCTURE:
-Methodology section:
+STRUCTURE — Write as TWO sections:
+
+METHODOLOGY (2-3 paragraphs):
 - State the equation using [EQ]...[/EQ] markers:
   [EQ]{self.plan['y_label']}_{'{it}'} = α + β × {self.plan['x_label']}_{'{it}'} + γ Controls_{'{it}'} + ε_{'{it}'}[/EQ]
   Then for fixed effects:
   [EQ]{self.plan['y_label']}_{'{it}'} = β × {self.plan['x_label']}_{'{it}'} + μ_{'{i}'} + ε_{'{it}'}[/EQ]
-- Briefly mention the control variables and why they are included (1-2 sentences, not a paragraph per control)
-- Describe the fixed effects specification
-- Data source and coverage
+- Mention control variables briefly (1-2 sentences, not a paragraph each). Say WHY they're included: what confound do they block?
+- Data source and coverage. Make the reader feel the scope: how many countries, how many years, how many observations.
 
-Results section:
-- Lead with the OLS+controls result (the default specification). This is the main result.
-- Then show how fixed effects changes the picture
-- Mention correlation coefficients briefly
-- DO NOT dwell on the bivariate OLS without controls. It is naive and only useful as a benchmark.
-- If the coefficient sign flips or the magnitude changes dramatically across specifications, EXPLAIN WHY. This is the story.
-- Report exact numbers: coefficient, standard error, p-value, R-squared, N
-- Do not describe what control variables "capture" in the results section. The reader knows.""",
+RESULTS (2-3 paragraphs):
+- Lead with the HEADLINE. First sentence of results should be the main finding in plain English, with the number translated into meaningful terms (not just a coefficient, but what it means: "each additional percentage point of X is associated with Y more years/dollars/points of Z").
+- Then layer in the specifications: OLS+controls first, then fixed effects. If the fixed-effects estimate DIFFERS from OLS, that difference IS the story. Explain why: what does the within-country estimator capture that cross-country misses?
+- Report exact numbers: coefficient, standard error, p-value, R-squared, N. But embed them in sentences that tell a story, don't just list them.
+- If the result is surprising (contradicts the hypothesis, or one specification disagrees with another), lean INTO the surprise. That's what makes the reader think.
+- Mention correlations briefly as supporting evidence, not as a main result.
+- Do NOT dwell on the bivariate OLS without controls. It is naive and only useful as a benchmark.""",
             ),
             "conclusion": (
-                f"You are an economics journal writer. Write ONLY a conclusion (150-250 words). {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are an economics journal writer known for clear, compelling prose. Write ONLY a conclusion (150-250 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
 Main result (OLS+controls): B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}
 Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}
 
-Write ONLY the conclusion. Summarize what the analysis found, acknowledge limitations concretely
-(endogeneity, omitted variables, measurement), and suggest what future work could do differently.
-Do NOT include policy recommendations here — those go in a separate section.""",
+Write ONLY the conclusion in 2-3 tight paragraphs.
+
+PARAGRAPH 1: State the answer directly. Did the hypothesis hold? By how much? Translate the coefficient into plain language one more time. One surprising or notable detail from the results that the reader should remember.
+
+PARAGRAPH 2: Limitations — but make them SPECIFIC and INTERESTING, not a generic checklist. "Endogeneity is a concern" is boring. "Countries don't urbanize randomly; the same industrialization that pulls people into cities also funds hospitals, and no instrument cleanly separates these" is interesting. Name 2-3 specific threats to identification.
+
+PARAGRAPH 3 (optional, short): What should the NEXT paper do differently? Be concrete. Name a specific method, dataset, or natural experiment that could push the evidence forward.
+
+Do NOT include policy recommendations — those go in a separate section.""",
             ),
             "policy_implications": (
-                f"You are an economics policy advisor writing for a journal. {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are an economics policy advisor who writes like a sharp columnist, not a bureaucrat. {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
@@ -1397,23 +1439,16 @@ Write EXACTLY 2-3 policy recommendation paragraphs. These must be MECE
 
 STRICT FORMAT for each paragraph:
 - First sentence: a short, direct, bold-worthy conclusion (max 15 words). This is the takeaway.
-  Mark it with RECOMMENDATION: at the start.
-- Remaining sentences: explain the reasoning, evidence, and caveats behind that conclusion.
-  2-4 sentences, concrete and specific.
-
-Example format:
-RECOMMENDATION: Governments should prioritize electricity access over generation capacity.
-The fixed-effects estimate suggests that access, not total output, drives per-capita income gains.
-Countries like Kenya and Bangladesh saw GDP growth accelerate after rural electrification programs,
-even without large-scale power plant investment. The caveat is that our panel cannot separate
-access from correlated infrastructure improvements.
+  Mark it with RECOMMENDATION: at the start. Make it sharp enough to be a newspaper headline.
+- Remaining sentences: the WHY. Connect the recommendation to a specific coefficient or finding from the analysis. Name a real country or policy example where possible. Acknowledge the caveat in one sentence, not three.
 
 RULES:
 - Exactly 2-3 paragraphs, each starting with RECOMMENDATION:
 - No overlap between paragraphs — each covers a distinct policy dimension
 - Together they should cover the full scope of actionable implications
 - Match the tone to the evidence strength: if results are weak, hedge accordingly
-- No generic advice like "more research is needed" — be specific about WHAT policy action""",
+- No generic advice like "more research is needed" — be specific about WHAT policy action
+- Each recommendation should feel like something a finance minister could act on tomorrow""",
             ),
         }
 
@@ -1429,23 +1464,33 @@ def ai_proofread(sections: dict) -> dict:
     )
 
     proofread_text = ask_claude(
-        system=f"""You are a meticulous academic editor trained in Deirdre McCloskey's writing rules. Your job is to proofread and improve economics papers.
+        system=f"""You are a sharp academic editor. Your PRIMARY job is making the paper engaging to read, not just grammatically correct. A paper can be perfectly correct and still bore the reader into closing the tab.
 
 {WRITING_RULES}
 
-ADDITIONAL PROOFREADING RULES:
-- Remove any sentence that begins with "This paper" or "This study" and rewrite it.
-- Remove any table-of-contents paragraph ("The rest of the paper is organized as follows").
-- Remove any section heading that got duplicated at the start of the section text.
-- Fix nominalization: "there is a need for reanalysis" -> "we must reanalyze".
-- Remove "very", "absolutely", "purely" unless they carry real meaning.
-- Replace "significant" with "large/substantial/meaningful" unless referring to statistical significance.
-- Remove "it is important to note that" and similar throat-clearing.
+YOUR EDITING PRIORITIES (in order):
+
+1. SENTENCE RHYTHM: Find sequences where 3+ sentences have similar length. Break the pattern. Split a long sentence into two. Merge two short ones. Add a punchy 4-word sentence after a complex 30-word one.
+
+2. DEAD OPENINGS: If two consecutive paragraphs start the same way (both with a noun phrase, both with "The"), rewrite one opener. Start with a number, a contrast ("Yet"), a question, or a concrete image.
+
+3. THROAT-CLEARING: Delete every sentence that exists only to transition or announce what's coming. "It is important to note that" — gone. "Several factors contribute to" — gone. "A growing body of literature suggests" — gone. Just say the thing.
+
+4. HEDGE STACKING: If a sentence has more than one hedge ("may", "suggests", "appears to", "is associated with"), keep only the most important one. One hedge per claim is honest. Three hedges per claim is cowardly.
+
+5. FLAT NUMBERS: When a coefficient appears, check if it's been translated into human terms. "B=0.14" should become "roughly seven additional weeks of life expectancy." If the writer already did this, leave it. If not, add the translation.
+
+6. NOMINALIZATION: "there is a need for" → "we need". "The estimation of" → "We estimate". "Examination reveals" → "We find". Turn every hidden verb back into a verb.
+
+7. STANDARD CLEANUP: Fix "This paper/study" openers. Remove markdown. Remove duplicated headings. Replace "significant" (non-statistical) with "large/substantial".
+
+CRITICAL CONSTRAINTS:
 - Keep the EXACT same structure: each section starts with [SECTION_NAME] on its own line.
-- Do NOT add new facts, citations, or data. Only improve the writing.
+- Do NOT add new facts, citations, or data.
 - Do NOT add markdown formatting.
-- Keep the substance identical. Only improve clarity, tone, and style.""",
-        user=f"Proofread and improve the following paper sections. Return the FULL text with the same [SECTION_NAME] markers:\n\n{full_text}",
+- Keep the substance identical. Only improve the writing.
+- Preserve all [EQ]...[/EQ] equation markers exactly as they are.""",
+        user=f"Proofread and improve the following paper sections. Make them engaging. Return the FULL text with the same [SECTION_NAME] markers:\n\n{full_text}",
         max_tokens=6000,
     )
 
@@ -2111,7 +2156,7 @@ print("Done.")
 # MAIN PIPELINE
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
-                 advocacy_angle: str = "", advocacy_temperature: int = 5):
+                 advocacy_angle: str = "", advocacy_temperature: int = 1):
     print("\n" + "=" * 60)
     print("  EMPIRICA v1.4.0")
     print("=" * 60)
