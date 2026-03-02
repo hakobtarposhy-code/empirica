@@ -4,7 +4,7 @@ Faithful port of the React landing page design.
 """
 
 import streamlit as st
-
+import streamlit.components.v1 as components
 import os
 import sys
 import io
@@ -987,248 +987,330 @@ if not api_key:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# INPUT — Real Streamlit widgets styled via st-key-* CSS classes
+# INPUT — Beautiful HTML pill (visual) + hidden Streamlit widgets (functional)
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
 
 if "show_framing" not in st.session_state:
     st.session_state.show_framing = False
 
-# ── CSS targeting specific widget keys ──
+# ── CSS: hide the real Streamlit widgets completely ──
 st.markdown("""
 <style>
-/* ═══ PILL CONTAINER ═══
-   Uses :has() to find the container that holds our pill_hyp widget */
-
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-pill_hyp) {
-    border: 2px solid #E2E8F0 !important;
-    border-radius: 2.5rem !important;
-    padding: 0.25rem 0.35rem !important;
-    box-shadow: 0 25px 60px -12px rgba(30,64,175,0.06) !important;
-    background: #FFFFFF !important;
+.st-key-pill_hyp, .st-key-pill_gear, .st-key-pill_draft,
+.st-key-adv_angle, .st-key-adv_temp {
+    position: fixed !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    height: 1px !important;
+    width: 1px !important;
     overflow: hidden !important;
+    opacity: 0 !important;
 }
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-pill_hyp):focus-within {
-    border-color: #93C5FD !important;
-}
-/* Kill inner gaps */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-pill_hyp) > div {
-    gap: 0rem !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-pill_hyp) > div > div[data-testid="stVerticalBlock"] {
-    gap: 0rem !important;
-}
-/* Align columns vertically */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-pill_hyp) [data-testid="stHorizontalBlock"] {
-    align-items: center !important;
-    gap: 0.15rem !important;
-}
-
-/* ═══ HYPOTHESIS INPUT — borderless, transparent ═══ */
-
-.st-key-pill_hyp {
-    margin-bottom: 0 !important;
-}
-.st-key-pill_hyp label {
-    display: none !important;
-}
-.st-key-pill_hyp [data-baseweb="input"] {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-.st-key-pill_hyp input {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 1.1rem 0.8rem !important;
-    font-size: 1.12rem !important;
-    font-weight: 300 !important;
-    color: #0F172A !important;
-    height: auto !important;
-}
-.st-key-pill_hyp input:focus {
-    border: none !important;
-    box-shadow: none !important;
-    outline: none !important;
-}
-.st-key-pill_hyp input::placeholder {
-    color: #94A3B8 !important;
-    font-weight: 300 !important;
-}
-/* Kill ALL nested divs' borders in the input */
-.st-key-pill_hyp div {
-    border-color: transparent !important;
-}
-
-/* ═══ GEAR BUTTON — small, transparent icon ═══ */
-
-.st-key-pill_gear {
-    margin-bottom: 0 !important;
-}
-.st-key-pill_gear button {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: #94A3B8 !important;
-    width: 44px !important;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    height: 44px !important;
-    min-height: 44px !important;
-    max-height: 44px !important;
-    padding: 0 !important;
-    border-radius: 14px !important;
-    font-size: 1.2rem !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin: 0 auto !important;
-    line-height: 1 !important;
-}
-.st-key-pill_gear button:hover {
-    background: #EFF6FF !important;
-    color: #3B82F6 !important;
-    box-shadow: none !important;
-    transform: none !important;
-    border: none !important;
-}
-.st-key-pill_gear button:active,
-.st-key-pill_gear button:focus {
-    background: #EFF6FF !important;
-    color: #3B82F6 !important;
-    box-shadow: none !important;
-    border: none !important;
-}
-/* Active state when framing is open */
-.st-key-pill_gear.gear-active button {
-    background: #EFF6FF !important;
-    color: #3B82F6 !important;
-}
-
-/* ═══ DRAFT PAPER BUTTON — blue pill shape ═══ */
-
-.st-key-pill_draft {
-    margin-bottom: 0 !important;
-}
-.st-key-pill_draft button {
-    background: #3B5BDB !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 2rem !important;
-    padding: 0.9rem 1.8rem !important;
-    font-size: 0.95rem !important;
-    font-weight: 700 !important;
-    min-height: 50px !important;
-    white-space: nowrap !important;
-    box-shadow: 0 8px 24px rgba(59,91,219,0.3) !important;
-    letter-spacing: -0.01em !important;
-}
-.st-key-pill_draft button:hover {
-    background: #2B4BC8 !important;
-    box-shadow: 0 12px 32px rgba(59,91,219,0.4) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-}
-.st-key-pill_draft button:active,
-.st-key-pill_draft button:focus {
-    background: #2B4BC8 !important;
-    color: #FFFFFF !important;
-    box-shadow: 0 12px 32px rgba(59,91,219,0.4) !important;
-    border: none !important;
-}
-
-/* ═══ FRAMING PANEL ═══ */
-
-.st-key-pill_framing_divider hr {
-    margin: 0.4rem 0 !important;
-    border-color: #F1F5F9 !important;
-}
-.st-key-adv_angle label { display: none !important; }
-.st-key-adv_angle input {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    border-radius: 0.75rem !important;
-    padding: 0.7rem 1rem !important;
-    font-size: 0.9rem !important;
-    box-shadow: none !important;
-    height: auto !important;
-}
-.st-key-adv_angle input:focus {
-    border-color: #93C5FD !important;
-    box-shadow: 0 0 0 2px rgba(59,130,246,0.08) !important;
-}
-.st-key-adv_angle [data-baseweb="input"] {
-    border: none !important;
-    background: transparent !important;
-}
-
-.st-key-adv_temp label { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── The pill ──
-with st.container(border=True):
-    col_input, col_gear, col_btn = st.columns([6, 0.6, 2], gap="small")
+# ── Real Streamlit widgets (hidden off-screen, but fully functional) ──
+hypothesis = st.text_input("h", label_visibility="collapsed", key="pill_hyp")
 
-    with col_input:
-        hypothesis = st.text_input(
-            "hypothesis",
-            placeholder="Enter a testable statement...",
-            label_visibility="collapsed",
-            key="pill_hyp",
-        )
+if st.button("g", key="pill_gear"):
+    st.session_state.show_framing = not st.session_state.show_framing
+    st.rerun()
 
-    with col_gear:
-        if st.button("⚙", key="pill_gear", help="Framing options"):
-            st.session_state.show_framing = not st.session_state.show_framing
-            st.rerun()
+run_button = st.button("d", key="pill_draft")
 
-    with col_btn:
-        run_button = st.button("Draft Paper  →", type="primary", use_container_width=True, key="pill_draft")
-
-    # ── Framing panel ──
-    if st.session_state.show_framing:
-        st.divider()
-        col_angle, col_strength = st.columns([1, 1], gap="large")
-        with col_angle:
-            st.markdown(
-                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">⚖️ Advocacy angle (optional)</p>',
-                unsafe_allow_html=True,
-            )
-            advocacy_angle = st.text_input(
-                "advocacy_angle_input",
-                placeholder="e.g., Free-market perspective, climate urgency...",
-                label_visibility="collapsed",
-                key="adv_angle",
-            )
-        with col_strength:
-            st.markdown(
-                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">Advocacy strength</p>',
-                unsafe_allow_html=True,
-            )
-            advocacy_temperature = st.slider(
-                "advocacy_strength_slider",
-                min_value=1, max_value=10, value=1,
-                label_visibility="collapsed",
-                key="adv_temp",
-                disabled=not advocacy_angle.strip(),
-            )
-            if advocacy_angle.strip():
-                if advocacy_temperature <= 3:
-                    lvl = "Objective & Clinical"
-                elif advocacy_temperature <= 7:
-                    lvl = "Moderate Emphasis"
-                else:
-                    lvl = "Subtle lean — data stays honest, narrative shifts"
-                st.markdown(
-                    f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
-                    unsafe_allow_html=True,
-                )
-
-if not st.session_state.show_framing:
+if st.session_state.show_framing:
+    advocacy_angle = st.text_input("a", label_visibility="collapsed", key="adv_angle",
+                                    placeholder="e.g., Free-market perspective...")
+    advocacy_temperature = st.slider("t", 1, 10, 1, label_visibility="collapsed", key="adv_temp")
+else:
     advocacy_angle = ""
     advocacy_temperature = 1
+
+# ── Dynamic values for the HTML template ──
+_show = st.session_state.show_framing
+_hyp = hypothesis.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+_angle = advocacy_angle.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;") if advocacy_angle else ""
+_temp = advocacy_temperature
+
+_adv_label = ""
+if advocacy_angle.strip():
+    if _temp <= 3: _adv_label = "Objective &amp; Clinical"
+    elif _temp <= 7: _adv_label = "Moderate Emphasis"
+    else: _adv_label = "Subtle lean — data stays honest, narrative shifts"
+
+# ── The beautiful HTML pill ──
+_pill_html = f"""
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: transparent; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }}
+
+  .pill {{
+    background: #FFFFFF;
+    border: 2px solid #E2E8F0;
+    border-radius: 2.5rem;
+    padding: 0.5rem;
+    box-shadow: 0 25px 60px -12px rgba(30,64,175,0.05);
+    transition: border-color 0.3s ease;
+    overflow: hidden;
+  }}
+  .pill:focus-within {{ border-color: #93C5FD; }}
+
+  .pill-row {{
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }}
+
+  .beaker-icon {{
+    padding-left: 1.5rem;
+    color: #3B82F6;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }}
+
+  .pill-input {{
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 1.35rem 1rem;
+    font-size: 1.12rem;
+    font-weight: 300;
+    color: #0F172A;
+    font-family: inherit;
+  }}
+  .pill-input::placeholder {{ color: #94A3B8; font-weight: 300; }}
+
+  .gear-btn {{
+    width: 44px; height: 44px;
+    border-radius: 1rem;
+    border: none;
+    background: transparent;
+    color: #94A3B8;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+  }}
+  .gear-btn:hover {{ background: #EFF6FF; color: #3B82F6; }}
+  .gear-btn.active {{ background: #EFF6FF; color: #3B82F6; }}
+
+  .draft-btn {{
+    background: #3B5BDB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 1.5rem;
+    padding: 1.15rem 2.2rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 0.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 8px 24px rgba(59,91,219,0.3);
+    flex-shrink: 0;
+  }}
+  .draft-btn:hover {{
+    background: #2B4BC8;
+    box-shadow: 0 12px 32px rgba(59,91,219,0.4);
+  }}
+  .draft-btn svg {{ transition: transform 0.2s ease; }}
+  .draft-btn:hover svg {{ transform: translateX(3px); }}
+
+  /* ── Framing panel ── */
+  .framing-panel {{
+    display: none;
+    gap: 2rem;
+    padding: 1.2rem 2rem 1.5rem 2rem;
+    border-top: 1px solid #F1F5F9;
+    background: rgba(248,250,252,0.5);
+  }}
+  .framing-panel.open {{ display: flex; animation: slideDown 0.25s ease-out; }}
+  @keyframes slideDown {{
+    from {{ opacity: 0; transform: translateY(-8px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+  }}
+  .framing-col {{ flex: 1; }}
+  .framing-label {{
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.2em; color: #64748B;
+    margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.35rem;
+  }}
+  .framing-label-row {{
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;
+  }}
+  .framing-input {{
+    width: 100%; background: #FFFFFF;
+    border: 1px solid #E2E8F0; border-radius: 0.75rem;
+    padding: 0.7rem 1rem; font-size: 0.9rem; font-family: inherit;
+    color: #0F172A; outline: none; transition: all 0.2s ease;
+  }}
+  .framing-input:focus {{ border-color: #93C5FD; box-shadow: 0 0 0 2px rgba(59,130,246,0.08); }}
+  .framing-input::placeholder {{ color: #94A3B8; }}
+  .strength-counter {{ font-size: 10px; font-family: 'SF Mono', monospace; color: #3B82F6; font-weight: 700; }}
+  .framing-slider {{
+    -webkit-appearance: none; width: 100%; height: 6px;
+    background: #E2E8F0; border-radius: 3px; outline: none; margin: 0.4rem 0;
+  }}
+  .framing-slider::-webkit-slider-thumb {{
+    -webkit-appearance: none; width: 18px; height: 18px;
+    background: #3B5BDB; border-radius: 50%; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(59,91,219,0.3);
+  }}
+  .framing-slider::-moz-range-thumb {{
+    width: 18px; height: 18px; background: #3B5BDB;
+    border-radius: 50%; cursor: pointer; border: none;
+  }}
+  .strength-label {{
+    font-size: 11px; color: #3B82F6; font-style: italic;
+    font-weight: 500; margin-top: 0.3rem; min-height: 1em;
+  }}
+</style>
+
+<div class="pill">
+  <div class="pill-row">
+    <div class="beaker-icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 3h15"/><path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/><path d="M6 14h12"/>
+      </svg>
+    </div>
+
+    <input class="pill-input" id="pillInput" type="text"
+      placeholder="Enter a testable statement..." value="{_hyp}" />
+
+    <button class="gear-btn" id="gearBtn" title="Framing Options">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>
+      </svg>
+    </button>
+
+    <button class="draft-btn" id="draftBtn">
+      Draft Paper
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="framing-panel" id="framingPanel">
+    <div class="framing-col">
+      <div class="framing-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+          <path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+          <path d="M7 21h10"/><path d="M12 3v18"/>
+        </svg>
+        Advocacy angle (optional)
+      </div>
+      <input class="framing-input" id="advAngleInput" type="text"
+        placeholder="e.g., Free-market perspective, climate urgency..."
+        value="{_angle}" />
+    </div>
+    <div class="framing-col">
+      <div class="framing-label-row">
+        <span class="framing-label" style="margin-bottom:0">Advocacy strength</span>
+        <span class="strength-counter" id="strengthCounter">{_temp}/10</span>
+      </div>
+      <input class="framing-slider" id="advSlider" type="range" min="1" max="10" step="1" value="{_temp}" />
+      <div class="strength-label" id="strengthLabel">{_adv_label}</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {{
+  const doc = window.parent.document;
+  const panel = document.getElementById('framingPanel');
+  const gearBtn = document.getElementById('gearBtn');
+
+  // ── Helper: click a hidden Streamlit button ──
+  function clickStBtn(cssSelector) {{
+    const btn = doc.querySelector(cssSelector + ' button');
+    if (btn) btn.click();
+  }}
+
+  // ══════════════════════════════════════════════════════════
+  // DRAFT PAPER: sync text to hidden widget → click hidden button
+  // ══════════════════════════════════════════════════════════
+  document.getElementById('draftBtn').addEventListener('click', () => {{
+    const hyp = document.getElementById('pillInput').value.trim();
+    if (!hyp) {{ document.getElementById('pillInput').focus(); return; }}
+
+    // Sync hypothesis text to hidden Streamlit input
+    const stInput = doc.querySelector('.st-key-pill_hyp input');
+    if (stInput) {{
+      // Use React's native setter to bypass synthetic event system
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+      ).set;
+      stInput.focus();
+      setter.call(stInput, hyp);
+      stInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      stInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+      stInput.blur();
+    }}
+
+    // Wait for React to commit the value, then click Draft button
+    setTimeout(() => {{
+      const stBtn = doc.querySelector('.st-key-pill_draft button');
+      if (stBtn) stBtn.click();
+    }}, 250);
+  }});
+
+  // ── Enter key in input ──
+  document.getElementById('pillInput').addEventListener('keydown', (e) => {{
+    if (e.key === 'Enter') {{
+      e.preventDefault();
+      document.getElementById('draftBtn').click();
+    }}
+  }});
+
+  // ══════════════════════════════════════════════════════════
+  // GEAR: click hidden Streamlit gear button → triggers st.rerun
+  // ══════════════════════════════════════════════════════════
+  gearBtn.addEventListener('click', () => {{
+    clickStBtn('.st-key-pill_gear');
+  }});
+
+  // Show gear active state if framing is open (server-rendered state)
+  if ('{str(_show).lower()}' === 'true') {{
+    gearBtn.classList.add('active');
+    panel.classList.add('open');
+  }}
+
+  // ══════════════════════════════════════════════════════════
+  // SLIDER: real-time label update (no server call needed)
+  // ══════════════════════════════════════════════════════════
+  const slider = document.getElementById('advSlider');
+  const counter = document.getElementById('strengthCounter');
+  const sLabel = document.getElementById('strengthLabel');
+  slider.addEventListener('input', () => {{
+    const v = parseInt(slider.value);
+    counter.textContent = v + '/10';
+    if (v <= 3) sLabel.textContent = 'Objective & Clinical';
+    else if (v <= 7) sLabel.textContent = 'Moderate Emphasis';
+    else sLabel.textContent = 'Subtle lean — data stays honest, narrative shifts';
+  }});
+
+  // ══════════════════════════════════════════════════════════
+  // RESIZE iframe to fit pill content
+  // ══════════════════════════════════════════════════════════
+  function resize() {{
+    const h = document.querySelector('.pill').offsetHeight + 8;
+    if (window.frameElement) window.frameElement.style.height = h + 'px';
+  }}
+  resize();
+  setTimeout(resize, 150);
+  setTimeout(resize, 400);
+}})();
+</script>
+"""
+
+components.html(_pill_html, height=220, scrolling=False)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGES + CONSOLE LABELS
