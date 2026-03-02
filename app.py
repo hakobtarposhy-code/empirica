@@ -994,23 +994,42 @@ hypothesis = st.text_input(
 )
 
 # ── Optional: Advocacy angle + temperature ──
-with st.expander("⚙️ Framing options (optional)", expanded=False):
-    advocacy_angle = st.text_input(
-        "Advocacy angle",
-        placeholder="e.g., pro-free trade, skeptical of austerity, argue for universal healthcare...",
-        help="Leave blank for a neutral, balanced paper. If set, the paper's narrative will lean toward this perspective. Data and statistics stay untouched.",
-    )
-    advocacy_temperature = st.slider(
-        "Advocacy strength",
-        min_value=1, max_value=10, value=5,
-        help="1-3: subtle lean, barely noticeable. 4-6: clear perspective, still cites counterarguments. 7-9: strong policy argument. 10: maximum advocacy.",
-        disabled=not advocacy_angle.strip(),
-    )
-    if advocacy_angle.strip():
-        levels = {1: "Barely noticeable", 2: "Barely noticeable", 3: "Subtle lean",
-                  4: "Clear perspective", 5: "Clear perspective", 6: "Moderate argument",
-                  7: "Strong argument", 8: "Strong argument", 9: "Very strong", 10: "Maximum advocacy"}
-        st.caption(f"**{levels.get(advocacy_temperature, '')}** — data stays honest, narrative shifts")
+with st.expander("⚙️ Framing options", expanded=False):
+    col_angle, col_strength = st.columns([1, 1], gap="large")
+    with col_angle:
+        st.markdown(
+            '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">⚖️ Advocacy angle (optional)</p>',
+            unsafe_allow_html=True,
+        )
+        advocacy_angle = st.text_input(
+            "advocacy_angle_input",
+            placeholder="e.g., Free-market perspective, climate urgency...",
+            label_visibility="collapsed",
+        )
+    with col_strength:
+        st.markdown(
+            '<div style="display:flex;justify-content:space-between;align-items:center;">'
+            '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin:0;">Advocacy strength</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        advocacy_temperature = st.slider(
+            "advocacy_strength_slider",
+            min_value=1, max_value=10, value=1,
+            label_visibility="collapsed",
+            disabled=not advocacy_angle.strip(),
+        )
+        if advocacy_angle.strip():
+            if advocacy_temperature <= 3:
+                lvl = "Objective & Clinical"
+            elif advocacy_temperature <= 7:
+                lvl = "Moderate Emphasis"
+            else:
+                lvl = "Subtle lean — data stays honest, narrative shifts"
+            st.markdown(
+                f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
+                unsafe_allow_html=True,
+            )
 
 run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
 
@@ -1113,7 +1132,7 @@ if run_button:
             run_empirica(
                 hypothesis,
                 advocacy_angle=advocacy_angle.strip() if advocacy_angle else "",
-                advocacy_temperature=advocacy_temperature if advocacy_angle.strip() else 5,
+                advocacy_temperature=advocacy_temperature if advocacy_angle.strip() else 1,
             )
         except Exception as e:
             result_box["error"] = str(e)
