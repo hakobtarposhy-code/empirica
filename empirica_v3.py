@@ -1,9 +1,11 @@
 # ============================================================================
-# EMPIRICA v1.1.0 — Complete Research Pipeline
+# EMPIRICA v1.3.0 — Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
 #         academic paper formatting (margins, spacing, page numbers, title page)
+# v1.2.0: MECE policy section (bold lead sentences), conclusion/policy split
+# v1.3.0: OMML equations in Word (native equation objects), UI overhaul
 #
 # Usage:
 #   As module (from Streamlit/app.py):
@@ -47,7 +49,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"          # ← CHANGE 1: Sonnet 4.5
+CLAUDE_MODEL = "claude-opus-4-6"                      # ← Opus 4.6
 OUTPUT_DIR = "output"
 
 INDICATOR_FAMILIES = {
@@ -1000,8 +1002,8 @@ WRITING_RULES = """WRITING STYLE (follow strictly):
 - No five-dollar words when plain ones work: "use" not "utilize", "start" not "commence", "show" not "demonstrate".
 - Avoid "this", "these", "those" as much as possible. Use "the" or repeat the noun.
 - Write as if explaining to a smart colleague over coffee, not performing for a tenure committee.
-- Equations: write them out with words when possible. "GDP per capita = α + β × Electricity Access + ε"
-- No markdown formatting whatsoever. No #, **, *, `, $$, LaTeX.
+- Equations: wrap each equation in [EQ]...[/EQ] markers on its own line. Use Greek Unicode (α, β, γ, ε, μ, σ, δ, λ, θ, ρ, τ, φ) and _{subscript} for subscripts. Example: [EQ]Y_{it} = α + β × X_{it} + γ Z_{it} + ε_{it}[/EQ]
+- No markdown formatting whatsoever. No #, **, *, `, $$.
 - Do NOT write a full paper. Write ONLY the section requested."""
 
 class PaperWriter:
@@ -1128,7 +1130,10 @@ RESULTS (focus on controlled and fixed-effects, not bivariate OLS):
 
 STRUCTURE:
 Methodology section:
-- State the equation clearly using words: "{self.plan['y_label']} = α + β × {self.plan['x_label']} + Controls + ε"
+- State the equation using [EQ]...[/EQ] markers:
+  [EQ]{self.plan['y_label']}_{'{it}'} = α + β × {self.plan['x_label']}_{'{it}'} + γ Controls_{'{it}'} + ε_{'{it}'}[/EQ]
+  Then for fixed effects:
+  [EQ]{self.plan['y_label']}_{'{it}'} = β × {self.plan['x_label']}_{'{it}'} + μ_{'{i}'} + ε_{'{it}'}[/EQ]
 - Briefly mention the control variables and why they are included (1-2 sentences, not a paragraph per control)
 - Describe the fixed effects specification
 - Data source and coverage
@@ -1143,17 +1148,47 @@ Results section:
 - Do not describe what control variables "capture" in the results section. The reader knows.""",
             ),
             "conclusion": (
-                f"You are an economics journal writer. Write ONLY a conclusion (250-400 words). {WRITING_RULES}\n{self.cites}",
+                f"You are an economics journal writer. Write ONLY a conclusion (150-250 words). {WRITING_RULES}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
 Main result (OLS+controls): B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}
 Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}
 
-Write the conclusion. Be honest. If evidence is weak, say so directly.
-- State what the analysis found (1-2 sentences)
-- Acknowledge limitations concretely (endogeneity, omitted variables, measurement)
-- Suggest what future work could do differently (specific methods, not vague "more research needed")
-- End with a concrete policy implication or takeaway, appropriately hedged""",
+Write ONLY the conclusion. Summarize what the analysis found, acknowledge limitations concretely
+(endogeneity, omitted variables, measurement), and suggest what future work could do differently.
+Do NOT include policy recommendations here — those go in a separate section.""",
+            ),
+            "policy_implications": (
+                f"You are an economics policy advisor writing for a journal. {WRITING_RULES}\n{self.cites}",
+                f"""Hypothesis: {self.plan['statement']}
+X: {self.plan['x_label']}, Y: {self.plan['y_label']}
+Interpretation: {json.dumps(self.interp, indent=2, default=str)}
+Main result (OLS+controls): B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}
+Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}
+Tone: {self.interp.get('recommended_tone','cautious')}
+
+Write EXACTLY 2-3 policy recommendation paragraphs. These must be MECE
+(mutually exclusive, collectively exhaustive — no overlap, full coverage).
+
+STRICT FORMAT for each paragraph:
+- First sentence: a short, direct, bold-worthy conclusion (max 15 words). This is the takeaway.
+  Mark it with RECOMMENDATION: at the start.
+- Remaining sentences: explain the reasoning, evidence, and caveats behind that conclusion.
+  2-4 sentences, concrete and specific.
+
+Example format:
+RECOMMENDATION: Governments should prioritize electricity access over generation capacity.
+The fixed-effects estimate suggests that access, not total output, drives per-capita income gains.
+Countries like Kenya and Bangladesh saw GDP growth accelerate after rural electrification programs,
+even without large-scale power plant investment. The caveat is that our panel cannot separate
+access from correlated infrastructure improvements.
+
+RULES:
+- Exactly 2-3 paragraphs, each starting with RECOMMENDATION:
+- No overlap between paragraphs — each covers a distinct policy dimension
+- Together they should cover the full scope of actionable implications
+- Match the tone to the evidence strength: if results are weak, hedge accordingly
+- No generic advice like "more research is needed" — be specific about WHAT policy action""",
             ),
         }
 
@@ -1278,6 +1313,78 @@ class DocumentAssembler:
         p.style = doc.styles["Normal"]
         if first_line_indent:
             p.paragraph_format.first_line_indent = Inches(0.4)
+        return p
+
+    def _add_equation(self, doc, equation_text):
+        """Add a centered OMML equation (Word's native equation format)."""
+        from lxml import etree
+
+        MATH_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math'
+        WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+        def _m(tag):
+            return f'{{{MATH_NS}}}{tag}'
+
+        def make_run(text):
+            """Create an OMML run: <m:r><m:t>text</m:t></m:r>"""
+            r = etree.SubElement(parent_holder[0], _m('r'))
+            rpr = etree.SubElement(r, _m('rPr'))
+            sty = etree.SubElement(rpr, _m('sty'))
+            sty.set(_m('val'), 'p')
+            t = etree.SubElement(r, _m('t'))
+            t.text = text
+            return r
+
+        def make_sub(base, sub):
+            """Create an OMML subscript: <m:sSub><m:e>base</m:e><m:sub>sub</m:sub></m:sSub>"""
+            ssub = etree.SubElement(parent_holder[0], _m('sSub'))
+            e = etree.SubElement(ssub, _m('e'))
+            r1 = etree.SubElement(e, _m('r'))
+            rpr1 = etree.SubElement(r1, _m('rPr'))
+            sty1 = etree.SubElement(rpr1, _m('sty'))
+            sty1.set(_m('val'), 'p')
+            t1 = etree.SubElement(r1, _m('t'))
+            t1.text = base
+            s = etree.SubElement(ssub, _m('sub'))
+            r2 = etree.SubElement(s, _m('r'))
+            rpr2 = etree.SubElement(r2, _m('rPr'))
+            sty2 = etree.SubElement(rpr2, _m('sty'))
+            sty2.set(_m('val'), 'p')
+            t2 = etree.SubElement(r2, _m('t'))
+            t2.text = sub
+
+        # Build OMML tree
+        omath_para = etree.Element(_m('oMathPara'), nsmap={'m': MATH_NS})
+        omath = etree.SubElement(omath_para, _m('oMath'))
+        parent_holder = [omath]  # mutable reference for nested functions
+
+        # Parse equation: split on subscript patterns like X_{it} or β_{1}
+        eq = equation_text.strip()
+        pos = 0
+        while pos < len(eq):
+            # Look for subscript pattern: char(s)_{...}
+            sub_match = re.search(r'(\S)_\{([^}]+)\}', eq[pos:])
+            if sub_match:
+                # Add any text before the subscript as a plain run
+                before = eq[pos:pos + sub_match.start()].strip()
+                if before:
+                    make_run(before + ' ')
+                make_sub(sub_match.group(1), sub_match.group(2))
+                make_run(' ')
+                pos = pos + sub_match.end()
+            else:
+                # No more subscripts — add remaining text
+                remaining = eq[pos:].strip()
+                if remaining:
+                    make_run(remaining)
+                break
+
+        # Insert into document
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(6)
+        p._element.append(omath_para)
         return p
 
     def _add_table(self, doc, headers, rows, col_widths=None):
@@ -1496,7 +1603,8 @@ class DocumentAssembler:
             "introduction": "1. Introduction",
             "literature_review": "2. Literature Review",
             "methodology_results": "3. Methodology and Results",
-            "conclusion": "4. Conclusion and Policy Implications",
+            "conclusion": "4. Conclusion",
+            "policy_implications": "5. Policy Implications",
         }
 
         for key, heading in headings.items():
@@ -1511,8 +1619,55 @@ class DocumentAssembler:
                 para = para.strip()
                 if not para:
                     continue
-                # First paragraph after heading: no indent
-                self._add_body_paragraph(doc, para, first_line_indent=(i > 0))
+
+                # --- MECE policy paragraphs: bold the lead sentence ---
+                if key == "policy_implications" and para.startswith("RECOMMENDATION:"):
+                    para = para[len("RECOMMENDATION:"):].strip()
+                    # Split into first sentence (bold) + rest
+                    sentence_end = re.search(r'(?<=[.!?])\s', para)
+                    if sentence_end:
+                        bold_part = para[:sentence_end.start() + 1]
+                        rest_part = para[sentence_end.end():]
+                    else:
+                        bold_part = para
+                        rest_part = ""
+
+                    p = doc.add_paragraph()
+                    p.style = doc.styles["Normal"]
+                    p.paragraph_format.space_before = Pt(6)
+                    p.paragraph_format.space_after = Pt(6)
+                    # Bold lead sentence
+                    run_bold = p.add_run(bold_part + " ")
+                    run_bold.font.bold = True
+                    run_bold.font.name = "Times New Roman"
+                    run_bold.font.size = Pt(12)
+                    # Normal explanation
+                    if rest_part:
+                        run_normal = p.add_run(rest_part)
+                        run_normal.font.name = "Times New Roman"
+                        run_normal.font.size = Pt(12)
+
+                # --- Equation paragraphs: [EQ]...[/EQ] → Word OMML ---
+                elif '[EQ]' in para and '[/EQ]' in para:
+                    eq_match = re.search(r'\[EQ\](.*?)\[/EQ\]', para, re.DOTALL)
+                    if eq_match:
+                        before = para[:eq_match.start()].strip()
+                        after = para[eq_match.end():].strip()
+                        eq_text = eq_match.group(1).strip()
+                        # Text before equation
+                        if before:
+                            self._add_body_paragraph(doc, before, first_line_indent=(i > 0))
+                        # The equation itself (OMML)
+                        self._add_equation(doc, eq_text)
+                        # Text after equation
+                        if after:
+                            self._add_body_paragraph(doc, after, first_line_indent=False)
+                    else:
+                        self._add_body_paragraph(doc, para, first_line_indent=(i > 0))
+
+                else:
+                    # Standard paragraph (all other sections)
+                    self._add_body_paragraph(doc, para, first_line_indent=(i > 0))
 
             # Tables and figures after methodology section
             if key == "methodology_results":
@@ -1658,7 +1813,7 @@ print("Done.")
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.1.0")
+    print("  EMPIRICA v1.3.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print("=" * 60)
@@ -1740,7 +1895,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v1.1.0 COMPLETE")
+    print("  ✅ EMPIRICA v1.3.0 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
