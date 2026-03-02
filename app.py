@@ -4,6 +4,7 @@ Faithful port of the React landing page design.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import sys
 import io
@@ -992,134 +993,9 @@ st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
 if "show_framing" not in st.session_state:
     st.session_state.show_framing = False
 
-# ── CSS for the pill-shaped input area ──
-st.markdown("""
-<style>
-/* ── The pill container (targets st.container with border) ── */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) {
-    border: 2px solid #E2E8F0 !important;
-    border-radius: 2.5rem !important;
-    padding: 0.35rem 0.5rem !important;
-    box-shadow: 0 25px 60px -12px rgba(30,64,175,0.06) !important;
-    background: #FFFFFF !important;
-    overflow: hidden;
-    transition: border-color 0.3s ease;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker):focus-within {
-    border-color: #93C5FD !important;
-}
-/* Kill inner padding of the container's child block */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) > div {
-    padding: 0 !important;
-    gap: 0 !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) > div > div[data-testid="stVerticalBlock"] {
-    gap: 0 !important;
-}
-
-/* ── Text input inside the pill ── */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div > div > input {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 1.1rem 1rem 1.1rem 0.5rem !important;
-    font-size: 1.1rem !important;
-    font-weight: 300 !important;
-    height: auto !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div > div > input:focus {
-    border: none !important;
-    box-shadow: none !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div {
-    border: none !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput label {
-    display: none !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput {
-    margin: 0 !important;
-}
-
-/* ── Gear button ── */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .gear-col .stButton > button {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: #94A3B8 !important;
-    padding: 0.4rem !important;
-    min-height: 40px !important;
-    max-height: 40px !important;
-    min-width: 40px !important;
-    max-width: 40px !important;
-    border-radius: 12px !important;
-    font-size: 1.05rem !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin: 0 auto !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .gear-col .stButton > button:hover {
-    background: #EFF6FF !important;
-    color: #3B82F6 !important;
-    box-shadow: none !important;
-    transform: none !important;
-}
-
-/* ── Draft Paper button inside the pill ── */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .draft-col .stButton > button {
-    border-radius: 1.5rem !important;
-    padding: 0.95rem 2rem !important;
-    font-size: 0.95rem !important;
-    min-height: 52px !important;
-    white-space: nowrap !important;
-    background: #3B5BDB !important;
-    box-shadow: 0 8px 24px rgba(59,91,219,0.3) !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .draft-col .stButton > button:hover {
-    background: #2B4BC8 !important;
-    box-shadow: 0 12px 32px rgba(59,91,219,0.4) !important;
-}
-
-/* ── Remove column gaps inside the pill ── */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) [data-testid="stHorizontalBlock"] {
-    gap: 0.25rem !important;
-    align-items: center !important;
-}
-
-/* ── Framing panel divider ── */
-.framing-divider {
-    border-top: 1px solid #F1F5F9;
-    background: rgba(248,250,252,0.5);
-    padding: 1.2rem 1.5rem 1.5rem 1.5rem;
-    margin: 0.3rem -0.5rem -0.35rem -0.5rem;
-    border-radius: 0 0 2.2rem 2.2rem;
-}
-.framing-divider .stTextInput > div > div > input {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    border-radius: 12px !important;
-    padding: 0.7rem 1rem !important;
-    font-size: 0.88rem !important;
-    font-weight: 400 !important;
-    box-shadow: none !important;
-}
-.framing-divider .stTextInput > div > div > input:focus {
-    border-color: #93C5FD !important;
-    box-shadow: 0 0 0 2px rgba(59,130,246,0.08) !important;
-}
-.framing-divider .stTextInput label { display: none !important; }
-.framing-divider .stSlider label { display: none !important; }
-.framing-divider .stSlider [data-baseweb="slider"] { margin-top: 0 !important; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── The pill ──
+# ── The input container ──
 with st.container(border=True):
-    # Hidden marker so CSS :has() can find this specific container
-    st.markdown('<span id="pill-marker" style="display:none"></span>', unsafe_allow_html=True)
-
-    col_input, col_gear, col_btn = st.columns([6, 0.6, 2], gap="small")
+    col_input, col_gear, col_btn = st.columns([6, 0.6, 2], gap="small", vertical_alignment="center")
 
     with col_input:
         hypothesis = st.text_input(
@@ -1129,20 +1005,16 @@ with st.container(border=True):
         )
 
     with col_gear:
-        st.markdown('<div class="gear-col">', unsafe_allow_html=True)
-        if st.button("⚙️", key="gear_toggle", help="Framing options"):
+        if st.button("⚙", key="gear_toggle", help="Framing options", use_container_width=True):
             st.session_state.show_framing = not st.session_state.show_framing
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_btn:
-        st.markdown('<div class="draft-col">', unsafe_allow_html=True)
-        run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        run_button = st.button("Draft Paper →", type="primary", use_container_width=True, key="draft_btn")
 
-    # ── Framing panel (inside the pill container) ──
+    # ── Framing panel (inside the container) ──
     if st.session_state.show_framing:
-        st.markdown('<div class="framing-divider">', unsafe_allow_html=True)
+        st.divider()
         col_angle, col_strength = st.columns([1, 1], gap="large")
         with col_angle:
             st.markdown(
@@ -1156,9 +1028,7 @@ with st.container(border=True):
             )
         with col_strength:
             st.markdown(
-                '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin:0;">Advocacy strength</p>'
-                '</div>',
+                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">Advocacy strength</p>',
                 unsafe_allow_html=True,
             )
             advocacy_temperature = st.slider(
@@ -1178,11 +1048,172 @@ with st.container(border=True):
                     f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
                     unsafe_allow_html=True,
                 )
-        st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.show_framing:
     advocacy_angle = ""
     advocacy_temperature = 1
+
+# ── JavaScript injection to restyle the pill container ──
+# components.html renders in an iframe that can access parent document
+components.html("""
+<script>
+(function() {
+    const doc = window.parent.document;
+
+    function stylePill() {
+        // Find the gear button by its text content
+        const allBtnsPage = doc.querySelectorAll('button');
+        let gearBtn = null;
+        for (const b of allBtnsPage) {
+            if (b.textContent.trim() === '⚙') { gearBtn = b; break; }
+        }
+        if (!gearBtn) return;
+        
+        // Walk up to find the stVerticalBlockBorderWrapper
+        let pill = gearBtn;
+        for (let i = 0; i < 20; i++) {
+            pill = pill.parentElement;
+            if (!pill) return;
+            if (pill.dataset && pill.dataset.testid === 'stVerticalBlockBorderWrapper') break;
+        }
+        if (!pill || pill.dataset?.testid !== 'stVerticalBlockBorderWrapper') return;
+        if (pill.dataset.pillStyled) return;
+        pill.dataset.pillStyled = 'true';
+
+        // Style the outer pill
+        Object.assign(pill.style, {
+            border: '2px solid #E2E8F0',
+            borderRadius: '2.5rem',
+            padding: '0.25rem 0.4rem',
+            boxShadow: '0 25px 60px -12px rgba(30,64,175,0.06)',
+            background: '#FFFFFF',
+            overflow: 'hidden'
+        });
+
+        // Style the inner block to remove gaps
+        const innerBlocks = pill.querySelectorAll('[data-testid="stVerticalBlock"]');
+        innerBlocks.forEach(b => { b.style.gap = '0'; });
+
+        // Style the horizontal block (columns row) for alignment
+        const hBlocks = pill.querySelectorAll('[data-testid="stHorizontalBlock"]');
+        hBlocks.forEach(b => { 
+            b.style.gap = '0.25rem'; 
+            b.style.alignItems = 'center'; 
+        });
+
+        // Style the main text input — make it borderless
+        const mainInput = pill.querySelector('input[type="text"]');
+        if (mainInput) {
+            Object.assign(mainInput.style, {
+                background: 'transparent',
+                border: 'none',
+                boxShadow: 'none',
+                padding: '1rem 0.8rem',
+                fontSize: '1.1rem',
+                fontWeight: '300',
+                outline: 'none'
+            });
+            // Also kill the wrapper div's border
+            const inputWrapper = mainInput.closest('[data-baseweb="input"]') || mainInput.parentElement;
+            if (inputWrapper) {
+                inputWrapper.style.border = 'none';
+                inputWrapper.style.boxShadow = 'none';
+                inputWrapper.style.background = 'transparent';
+            }
+            // And the grandparent
+            const gp = mainInput.parentElement?.parentElement;
+            if (gp) {
+                gp.style.border = 'none';
+                gp.style.boxShadow = 'none';
+                gp.style.background = 'transparent';
+            }
+            // Focus handler
+            mainInput.addEventListener('focus', () => {
+                mainInput.style.boxShadow = 'none';
+                mainInput.style.border = 'none';
+                mainInput.style.outline = 'none';
+                if (mainInput.parentElement?.parentElement) {
+                    mainInput.parentElement.parentElement.style.boxShadow = 'none';
+                    mainInput.parentElement.parentElement.style.border = 'none';
+                }
+            });
+        }
+
+        // Style the gear button — tiny, transparent, icon-only
+        const allBtns = pill.querySelectorAll('button');
+        allBtns.forEach(btn => {
+            const text = btn.textContent.trim();
+            if (text === '⚙' || text.includes('⚙')) {
+                Object.assign(btn.style, {
+                    background: 'transparent',
+                    border: 'none',
+                    boxShadow: 'none',
+                    color: '#94A3B8',
+                    padding: '0.4rem',
+                    minHeight: '40px',
+                    maxHeight: '40px',
+                    minWidth: '40px',
+                    maxWidth: '40px',
+                    borderRadius: '12px',
+                    fontSize: '1.2rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    margin: '0 auto'
+                });
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.background = '#EFF6FF';
+                    btn.style.color = '#3B82F6';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.background = 'transparent';
+                    btn.style.color = '#94A3B8';
+                });
+            }
+            // Style the Draft Paper button
+            if (text.includes('Draft Paper')) {
+                Object.assign(btn.style, {
+                    borderRadius: '1.5rem',
+                    padding: '0.85rem 1.8rem',
+                    fontSize: '0.95rem',
+                    minHeight: '50px',
+                    whiteSpace: 'nowrap',
+                    background: '#3B5BDB',
+                    boxShadow: '0 8px 24px rgba(59,91,219,0.3)',
+                    border: 'none',
+                    fontWeight: '600',
+                    letterSpacing: '-0.01em'
+                });
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.background = '#2B4BC8';
+                    btn.style.boxShadow = '0 12px 32px rgba(59,91,219,0.4)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.background = '#3B5BDB';
+                    btn.style.boxShadow = '0 8px 24px rgba(59,91,219,0.3)';
+                });
+            }
+        });
+
+        // Hide all labels inside the pill
+        pill.querySelectorAll('label').forEach(l => { l.style.display = 'none'; });
+        
+        // Remove bottom margin from stTextInput wrappers
+        pill.querySelectorAll('[data-testid="stTextInput"]').forEach(el => { el.style.marginBottom = '0'; });
+    }
+
+    // Run immediately + observe for re-renders
+    setTimeout(stylePill, 200);
+    setTimeout(stylePill, 600);
+    setTimeout(stylePill, 1200);
+    const obs = new MutationObserver(() => { setTimeout(stylePill, 100); });
+    obs.observe(doc.body, { childList: true, subtree: true });
+    // Auto-disconnect after 10s to avoid perf issues
+    setTimeout(() => obs.disconnect(), 10000);
+})();
+</script>
+""", height=0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
