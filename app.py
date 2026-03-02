@@ -1260,6 +1260,8 @@ _pill_html = f"""
         <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
       </svg>
     </button>
+    <!-- Hidden nav link (fallback for sandboxed iframes) -->
+    <a id="navLink" href="#" target="_parent" style="display:none"></a>
   </div>
 
   <!-- Framing panel -->
@@ -1291,7 +1293,6 @@ _pill_html = f"""
 
 <script>
 (function() {{
-  const parentWin = window.parent;
   const panel = document.getElementById('framingPanel');
   const gearBtn = document.getElementById('gearBtn');
   let framingOpen = false;
@@ -1326,9 +1327,15 @@ _pill_html = f"""
     setTimeout(resize, 300);
   }});
 
-  // ── Build URL with all pill state for Streamlit ──
-  function buildUrl() {{
-    const url = new URL(parentWin.location.href);
+  // ── Collect pill state as URL ──
+  function buildNavUrl() {{
+    // Get the parent URL (read is usually allowed even when write isn't)
+    let baseUrl;
+    try {{ baseUrl = window.parent.location.href; }} catch(e) {{
+      baseUrl = window.location.href;
+    }}
+    const url = new URL(baseUrl);
+    // Clean any existing Streamlit params that conflict
     url.searchParams.set('hyp', document.getElementById('pillInput').value);
     url.searchParams.set('run', '1');
     if (framingOpen) {{
@@ -1343,14 +1350,50 @@ _pill_html = f"""
     return url.toString();
   }}
 
-  // ── Draft Paper → send everything to Streamlit via URL ──
+  // ── Navigate parent — try every method, one will work ──
+  function navigateParent(url) {{
+    // Method 1: Direct parent location (works with allow-same-origin)
+    try {{ window.parent.location.href = url; return; }} catch(e) {{}}
+    // Method 2: Top-level location
+    try {{ window.top.location.href = url; return; }} catch(e) {{}}
+    // Method 3: Hidden anchor with target=_parent (browser-native navigation)
+    try {{
+      const a = document.getElementById('navLink');
+      a.href = url;
+      a.click();
+      return;
+    }} catch(e) {{}}
+    // Method 4: window.open with _parent target
+    try {{ window.open(url, '_parent'); return; }} catch(e) {{}}
+    // Method 5: Form submission with target
+    try {{
+      const f = document.createElement('form');
+      f.method = 'GET';
+      f.target = '_parent';
+      // Parse URL params into hidden inputs
+      const parsed = new URL(url);
+      f.action = parsed.origin + parsed.pathname;
+      for (const [k, v] of parsed.searchParams) {{
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = k; inp.value = v;
+        f.appendChild(inp);
+      }}
+      document.body.appendChild(f);
+      f.submit();
+      return;
+    }} catch(e) {{}}
+    // Method 6: postMessage (needs listener on parent)
+    try {{ window.parent.postMessage({{ type: 'empirica_draft', url: url }}, '*'); }} catch(e) {{}}
+  }}
+
+  // ── Draft Paper button ──
   document.getElementById('draftBtn').addEventListener('click', () => {{
     const hyp = document.getElementById('pillInput').value.trim();
     if (!hyp) {{
       document.getElementById('pillInput').focus();
       return;
     }}
-    parentWin.location.href = buildUrl();
+    navigateParent(buildNavUrl());
   }});
 
   // ── Enter key also triggers Draft ──
@@ -1383,6 +1426,21 @@ _pill_html = f"""
 """
 
 _pill_height = 220
+
+# ── Fallback: postMessage listener as a separate zero-height component ──
+# This runs in its OWN iframe but may have different sandbox permissions
+components.html("""
+<script>
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'empirica_draft' && e.data.url) {
+        try { window.parent.location.href = e.data.url; } catch(err) {}
+        try { window.top.location.href = e.data.url; } catch(err) {}
+        try { window.open(e.data.url, '_parent'); } catch(err) {}
+    }
+});
+</script>
+""", height=0)
+
 components.html(_pill_html, height=_pill_height, scrolling=False)
 
 # ═══════════════════════════════════════════════════════════════════════════════
