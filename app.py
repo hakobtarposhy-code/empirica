@@ -1,5 +1,5 @@
 """
-Empirica — Streamlit App (v1.1.0)
+Empirica — Streamlit App (v1.3.0)
 Faithful port of the React landing page design.
 """
 
@@ -245,26 +245,36 @@ st.markdown("""
         margin: 2.5rem -3rem;
         width: calc(100% + 6rem);
     }
+    .proof-heading {
+        text-align: center;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #94A3B8;
+        margin-bottom: 2.2rem;
+    }
     .proof-grid {
         display: flex;
-        gap: 3rem;
-        max-width: 700px;
+        gap: 2rem;
+        max-width: 740px;
         margin: 0 auto;
         padding: 0 2rem;
     }
-    .proof-item { flex: 1; }
-    .proof-icon {
-        width: 40px; height: 40px;
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 10px;
+    .proof-item { flex: 1; position: relative; }
+    .proof-step-num {
+        width: 32px; height: 32px;
+        background: #003A70;
+        border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+        font-size: 0.8rem;
+        color: white;
         margin-bottom: 0.8rem;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.06);
-        color: #003A70;
     }
     .proof-title {
         font-family: 'Inter', sans-serif;
@@ -280,6 +290,20 @@ st.markdown("""
         color: #94A3B8;
         line-height: 1.55;
         margin-top: 0.4rem;
+    }
+    .proof-desc strong {
+        font-weight: 600;
+        color: #334155;
+    }
+    /* connector line between steps */
+    .proof-item:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 16px;
+        right: -1rem;
+        width: calc(2rem);
+        height: 2px;
+        background: linear-gradient(90deg, #003A70, #CBD5E1);
     }
 
     /* ── Download buttons ── */
@@ -962,6 +986,7 @@ if not api_key:
 # ═══════════════════════════════════════════════════════════════════════════════
 # INPUT
 # ═══════════════════════════════════════════════════════════════════════════════
+st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
 hypothesis = st.text_input(
     "hypothesis",
     placeholder="Enter a hypothesis...",
@@ -1129,7 +1154,7 @@ if run_button:
         console_html = f'<div class="console-wrap">'
         console_html += '<div class="console-header"><div class="console-header-left">'
         console_html += '<div class="console-engine-icon">E</div>'
-        console_html += f'<div><div class="console-engine-title">Empirica Engine v1.1.0</div>'
+        console_html += f'<div><div class="console-engine-title">Empirica Engine v1.3.0</div>'
         console_html += f'<div class="console-engine-hyp">Analyzing: &quot;{hyp_short}&quot;</div></div>'
         console_html += '</div></div>'
         console_html += '<div class="console-body">'
@@ -1195,53 +1220,62 @@ if run_button:
 # ═══════════════════════════════════════════════════════════════════════════════
 if not run_button or not hypothesis.strip():
     st.markdown("""<div class="proof-section">
+<div class="proof-heading">How it works</div>
 <div class="proof-grid">
 <div class="proof-item">
-<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 6-10"/></svg></div>
-<div class="proof-title">Causal Modeling</div>
-<div class="proof-desc">Automated IV selection and robustness checks powered by global econometric databases.</div>
+<div class="proof-step-num">1</div>
+<div class="proof-title">Enter your hypothesis</div>
+<div class="proof-desc">Type any research question in plain English. "Does foreign aid reduce poverty?" "Does internet access drive GDP growth?" Empirica handles the rest.</div>
 </div>
 <div class="proof-item">
-<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></div>
-<div class="proof-title">Full Manuscripts</div>
-<div class="proof-desc">Intro, Lit Review, and Conclusion drafted in academic tone with reproducible code.</div>
+<div class="proof-step-num">2</div>
+<div class="proof-title">PhD-level agents go to work</div>
+<div class="proof-desc"><strong>Seven AI agents</strong> run in sequence: they search <strong>thousands of academic papers</strong> across Semantic Scholar and PubMed, pull <strong>live data from the World Bank</strong> for 100+ countries, run OLS and fixed-effects regressions with controls, review data quality, and write every section with real citations.</div>
 </div>
 <div class="proof-item">
-<div class="proof-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003A70" stroke-width="2" stroke-linecap="round"><path d="M9 17H7A5 5 0 017 7h2"/><path d="M15 7h2a5 5 0 010 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
-<div class="proof-title">Verified Citations</div>
-<div class="proof-desc">Direct links to sources across PubMed, SSRN, and Semantic Scholar.</div>
+<div class="proof-step-num">3</div>
+<div class="proof-title">Get your paper</div>
+<div class="proof-desc">Download a <strong>publication-ready manuscript</strong> with real data, real statistics, formatted tables and charts, a verified reference list, and reproducible Python code. In under three minutes.</div>
 </div>
 </div>
 </div>""", unsafe_allow_html=True)
 
     # ── Manuscript Preview ──
     st.markdown("""<div class="preview-section">
-<div class="preview-heading">See what Empirica generates</div>
+<div class="preview-heading">Example output</div>
 <div class="preview-card">
-<div class="preview-card-label">Generated Research Paper</div>
-<div class="preview-card-title">The Impact of Electricity Access on GDP Per Capita: A Cross-Country Analysis</div>
-<div class="preview-card-meta">Empirica AI · 2026</div>
+<div class="preview-card-label">Generated in 2 minutes 14 seconds</div>
+<div class="preview-card-title">Does Government Spending on Education Actually Raise GDP? Evidence from 127 Countries</div>
+<div class="preview-card-meta">[Author Name] · [Institution] · March 2026</div>
 <div class="preview-card-section-label">Abstract</div>
-<div class="preview-card-abstract">This paper investigates the causal relationship between electricity access and economic output measured by GDP per capita across 142 countries from 1990 to 2023. Using panel data analysis with instrumental variable estimation, we find that a 10 percentage point increase in electricity access is associated with a 4.2% increase in GDP per capita, controlling for institutional quality, education, and trade openness…</div>
+<div class="preview-card-abstract">Conventional wisdom holds that investing in education drives economic growth, yet the cross-country evidence is surprisingly mixed. We test this relationship using World Bank panel data covering 127 countries from 2005 to 2023. After controlling for urbanization, secondary enrollment, and GDP per capita, we find that a one percentage point increase in education spending as a share of GDP is associated with a $287 increase in GDP per capita (p = 0.003). Country fixed effects reduce the estimate to $142 but it remains significant, suggesting the relationship survives within-country variation. The effect is strongest in Sub-Saharan Africa and weakest in high-income OECD countries where education spending may already be past the point of diminishing returns.</div>
 <div class="preview-card-findings">
-<div class="preview-card-findings-title">Key Findings</div>
-<div class="preview-card-finding">Strong positive correlation (r = 0.78) between electricity access and GDP per capita</div>
-<div class="preview-card-finding">Effect is strongest in Sub-Saharan Africa and South Asia</div>
-<div class="preview-card-finding">Industrial electricity access has 2.3x the impact of residential access alone</div>
+<div class="preview-card-findings-title">What Empirica produced</div>
+<div class="preview-card-finding">Full paper with introduction, literature review (23 cited papers), methodology, results, and MECE policy recommendations</div>
+<div class="preview-card-finding">OLS + controls and country fixed-effects regressions with real World Bank data</div>
+<div class="preview-card-finding">Scatterplot by region, coefficient comparison chart, formatted tables, and reproducible Python code</div>
 </div>
 <div class="preview-card-stats">
-<div class="preview-card-stat"><strong>12</strong> citations</div>
-<div class="preview-card-stat"><strong>3,200</strong> words</div>
-<div class="preview-card-stat"><strong>1m 30s</strong> generated</div>
+<div class="preview-card-stat"><strong>23</strong> cited papers</div>
+<div class="preview-card-stat"><strong>127</strong> countries</div>
+<div class="preview-card-stat"><strong>4,100</strong> words</div>
+<div class="preview-card-stat"><strong>2m 14s</strong> to generate</div>
 </div>
 </div>
 </div>""", unsafe_allow_html=True)
 
-    # CTA button — rerun scrolls back to top naturally
-    st.markdown('<div style="height:1rem"></div>', unsafe_allow_html=True)
-    cta_col = st.columns([1, 2, 1])
-    with cta_col[1]:
-        if st.button("Try Empirica Free ↑", key="cta_top", use_container_width=True):
-            pass  # clicking reruns the app, which loads at top
+    # CTA button — smooth-scrolls to hypothesis input, no Streamlit rerun
+    st.markdown("""<div style="text-align:center; padding:1.5rem 0 0.5rem 0;">
+<a href="#empirica-input" style="
+    display:inline-block; padding:0.85rem 2.5rem;
+    background:#003A70; color:white; text-decoration:none;
+    font-family:'Inter',sans-serif; font-weight:600; font-size:0.9rem;
+    border-radius:12px; letter-spacing:0.01em;
+    box-shadow:0 4px 14px rgba(0,58,112,0.25);
+    transition:all 0.2s ease;
+" onmouseover="this.style.background='#00264D';this.style.boxShadow='0 6px 20px rgba(0,58,112,0.35)'"
+   onmouseout="this.style.background='#003A70';this.style.boxShadow='0 4px 14px rgba(0,58,112,0.25)'"
+>Try Empirica Free ↑</a>
+</div>""", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""<div class="emp-footer"><div class="footer-logo"><svg viewBox="0 0 100 100" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/><path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/><path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/><circle cx="85" cy="58" r="4" fill="#0F172A"/></svg><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdifAI</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
