@@ -987,14 +987,161 @@ if not api_key:
 # INPUT
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
-hypothesis = st.text_input(
-    "hypothesis",
-    placeholder="Enter a hypothesis...",
-    help="Plain English. Empirica picks the variables, data, and statistical methods.",
-)
 
-# ── Optional: Advocacy angle + temperature ──
-with st.expander("⚙️ Framing options", expanded=False):
+# Toggle state for framing panel
+if "show_framing" not in st.session_state:
+    st.session_state.show_framing = False
+
+# Inject CSS for the integrated input pill
+st.markdown("""
+<style>
+/* ── Integrated input pill ── */
+.input-pill {
+    background: #FFFFFF;
+    border: 2px solid #E2E8F0;
+    border-radius: 2.5rem;
+    padding: 0.5rem;
+    box-shadow: 0 25px 50px -12px rgba(30,64,175,0.05);
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+.input-pill:focus-within {
+    border-color: #3B82F6;
+}
+
+/* Hide default Streamlit input borders inside the pill */
+.input-pill .stTextInput > div > div > input {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 1rem 0.5rem !important;
+    font-size: 1.1rem !important;
+    font-weight: 300 !important;
+}
+.input-pill .stTextInput > div > div > input:focus {
+    border: none !important;
+    box-shadow: none !important;
+}
+.input-pill .stTextInput label { display: none !important; }
+.input-pill .stTextInput > div { border: none !important; }
+.input-pill .stTextInput { margin-bottom: 0 !important; }
+
+/* Gear toggle button */
+.gear-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 18px;
+    margin: 0;
+    flex-shrink: 0;
+}
+.gear-btn.inactive {
+    background: transparent;
+    color: #94A3B8;
+}
+.gear-btn.inactive:hover {
+    background: #F8FAFC;
+    color: #64748B;
+}
+.gear-btn.active {
+    background: #EFF6FF;
+    color: #1D4ED8;
+}
+
+/* Gear toggle — tiny icon button */
+.input-pill .stButton > button {
+    border-radius: 1.5rem !important;
+    padding: 1rem 2.2rem !important;
+    font-size: 0.95rem !important;
+    white-space: nowrap;
+    min-height: 52px !important;
+}
+
+/* Target the gear button specifically */
+.gear-wrapper .stButton > button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0.5rem !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    border-radius: 14px !important;
+    color: #94A3B8 !important;
+    font-size: 1.1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.gear-wrapper .stButton > button:hover {
+    background: #EFF6FF !important;
+    color: #1D4ED8 !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* Framing panel */
+.framing-panel {
+    border-top: 1px solid #F1F5F9;
+    background: rgba(248,250,252,0.5);
+    padding: 1.5rem 2rem 1.8rem 2rem;
+    animation: slideDown 0.25s ease-out;
+}
+@keyframes slideDown {
+    from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+    to { opacity: 1; max-height: 200px; }
+}
+.framing-panel .stTextInput > div > div > input {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 12px !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 400 !important;
+    box-shadow: none !important;
+}
+.framing-panel .stTextInput > div > div > input:focus {
+    border-color: #93C5FD !important;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.1) !important;
+}
+.framing-panel .stTextInput label { display: none !important; }
+.framing-panel .stSlider label { display: none !important; }
+.framing-panel .stSlider [data-baseweb="slider"] { margin-top: 0 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── The pill ──
+st.markdown('<div class="input-pill">', unsafe_allow_html=True)
+
+col_input, col_gear, col_btn = st.columns([6, 0.5, 1.5], gap="small")
+
+with col_input:
+    hypothesis = st.text_input(
+        "hypothesis",
+        placeholder="Enter a testable statement...",
+        label_visibility="collapsed",
+    )
+
+with col_gear:
+    st.markdown("<div class='gear-wrapper' style='padding-top:8px'>", unsafe_allow_html=True)
+    if st.button("⚙️", key="gear_toggle", help="Framing options"):
+        st.session_state.show_framing = not st.session_state.show_framing
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col_btn:
+    run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
+
+# ── Expandable framing panel (inside the pill) ──
+if st.session_state.show_framing:
+    st.markdown('<div class="framing-panel">', unsafe_allow_html=True)
     col_angle, col_strength = st.columns([1, 1], gap="large")
     with col_angle:
         st.markdown(
@@ -1030,8 +1177,12 @@ with st.expander("⚙️ Framing options", expanded=False):
                 f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
                 unsafe_allow_html=True,
             )
+    st.markdown('</div>', unsafe_allow_html=True)
+else:
+    advocacy_angle = ""
+    advocacy_temperature = 1
 
-run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
