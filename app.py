@@ -992,197 +992,197 @@ st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
 if "show_framing" not in st.session_state:
     st.session_state.show_framing = False
 
-# Inject CSS for the integrated input pill
+# ── CSS for the pill-shaped input area ──
 st.markdown("""
 <style>
-/* ── Integrated input pill ── */
-.input-pill {
-    background: #FFFFFF;
-    border: 2px solid #E2E8F0;
-    border-radius: 2.5rem;
-    padding: 0.5rem;
-    box-shadow: 0 25px 50px -12px rgba(30,64,175,0.05);
-    transition: all 0.3s ease;
+/* ── The pill container (targets st.container with border) ── */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) {
+    border: 2px solid #E2E8F0 !important;
+    border-radius: 2.5rem !important;
+    padding: 0.35rem 0.5rem !important;
+    box-shadow: 0 25px 60px -12px rgba(30,64,175,0.06) !important;
+    background: #FFFFFF !important;
     overflow: hidden;
+    transition: border-color 0.3s ease;
 }
-.input-pill:focus-within {
-    border-color: #3B82F6;
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker):focus-within {
+    border-color: #93C5FD !important;
+}
+/* Kill inner padding of the container's child block */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) > div {
+    padding: 0 !important;
+    gap: 0 !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) > div > div[data-testid="stVerticalBlock"] {
+    gap: 0 !important;
 }
 
-/* Hide default Streamlit input borders inside the pill */
-.input-pill .stTextInput > div > div > input {
+/* ── Text input inside the pill ── */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div > div > input {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
-    padding: 1rem 0.5rem !important;
+    padding: 1.1rem 1rem 1.1rem 0.5rem !important;
     font-size: 1.1rem !important;
     font-weight: 300 !important;
+    height: auto !important;
 }
-.input-pill .stTextInput > div > div > input:focus {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div > div > input:focus {
     border: none !important;
     box-shadow: none !important;
 }
-.input-pill .stTextInput label { display: none !important; }
-.input-pill .stTextInput > div { border: none !important; }
-.input-pill .stTextInput { margin-bottom: 0 !important; }
-
-/* Gear toggle button */
-.gear-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    font-size: 18px;
-    margin: 0;
-    flex-shrink: 0;
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput > div {
+    border: none !important;
 }
-.gear-btn.inactive {
-    background: transparent;
-    color: #94A3B8;
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput label {
+    display: none !important;
 }
-.gear-btn.inactive:hover {
-    background: #F8FAFC;
-    color: #64748B;
-}
-.gear-btn.active {
-    background: #EFF6FF;
-    color: #1D4ED8;
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .stTextInput {
+    margin: 0 !important;
 }
 
-/* Gear toggle — tiny icon button */
-.input-pill .stButton > button {
-    border-radius: 1.5rem !important;
-    padding: 1rem 2.2rem !important;
-    font-size: 0.95rem !important;
-    white-space: nowrap;
-    min-height: 52px !important;
-}
-
-/* Target the gear button specifically */
-.gear-wrapper .stButton > button {
+/* ── Gear button ── */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .gear-col .stButton > button {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
-    padding: 0.5rem !important;
-    min-height: 44px !important;
-    max-height: 44px !important;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    border-radius: 14px !important;
     color: #94A3B8 !important;
-    font-size: 1.1rem !important;
+    padding: 0.4rem !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    border-radius: 12px !important;
+    font-size: 1.05rem !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    margin: 0 auto !important;
 }
-.gear-wrapper .stButton > button:hover {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .gear-col .stButton > button:hover {
     background: #EFF6FF !important;
-    color: #1D4ED8 !important;
+    color: #3B82F6 !important;
     box-shadow: none !important;
     transform: none !important;
 }
 
-/* Framing panel */
-.framing-panel {
+/* ── Draft Paper button inside the pill ── */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .draft-col .stButton > button {
+    border-radius: 1.5rem !important;
+    padding: 0.95rem 2rem !important;
+    font-size: 0.95rem !important;
+    min-height: 52px !important;
+    white-space: nowrap !important;
+    background: #3B5BDB !important;
+    box-shadow: 0 8px 24px rgba(59,91,219,0.3) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) .draft-col .stButton > button:hover {
+    background: #2B4BC8 !important;
+    box-shadow: 0 12px 32px rgba(59,91,219,0.4) !important;
+}
+
+/* ── Remove column gaps inside the pill ── */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(#pill-marker) [data-testid="stHorizontalBlock"] {
+    gap: 0.25rem !important;
+    align-items: center !important;
+}
+
+/* ── Framing panel divider ── */
+.framing-divider {
     border-top: 1px solid #F1F5F9;
     background: rgba(248,250,252,0.5);
-    padding: 1.5rem 2rem 1.8rem 2rem;
-    animation: slideDown 0.25s ease-out;
+    padding: 1.2rem 1.5rem 1.5rem 1.5rem;
+    margin: 0.3rem -0.5rem -0.35rem -0.5rem;
+    border-radius: 0 0 2.2rem 2.2rem;
 }
-@keyframes slideDown {
-    from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
-    to { opacity: 1; max-height: 200px; }
-}
-.framing-panel .stTextInput > div > div > input {
+.framing-divider .stTextInput > div > div > input {
     background: #FFFFFF !important;
     border: 1px solid #E2E8F0 !important;
     border-radius: 12px !important;
-    padding: 0.75rem 1rem !important;
-    font-size: 0.9rem !important;
+    padding: 0.7rem 1rem !important;
+    font-size: 0.88rem !important;
     font-weight: 400 !important;
     box-shadow: none !important;
 }
-.framing-panel .stTextInput > div > div > input:focus {
+.framing-divider .stTextInput > div > div > input:focus {
     border-color: #93C5FD !important;
-    box-shadow: 0 0 0 2px rgba(59,130,246,0.1) !important;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.08) !important;
 }
-.framing-panel .stTextInput label { display: none !important; }
-.framing-panel .stSlider label { display: none !important; }
-.framing-panel .stSlider [data-baseweb="slider"] { margin-top: 0 !important; }
+.framing-divider .stTextInput label { display: none !important; }
+.framing-divider .stSlider label { display: none !important; }
+.framing-divider .stSlider [data-baseweb="slider"] { margin-top: 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ── The pill ──
-st.markdown('<div class="input-pill">', unsafe_allow_html=True)
+with st.container(border=True):
+    # Hidden marker so CSS :has() can find this specific container
+    st.markdown('<span id="pill-marker" style="display:none"></span>', unsafe_allow_html=True)
 
-col_input, col_gear, col_btn = st.columns([6, 0.5, 1.5], gap="small")
+    col_input, col_gear, col_btn = st.columns([6, 0.6, 2], gap="small")
 
-with col_input:
-    hypothesis = st.text_input(
-        "hypothesis",
-        placeholder="Enter a testable statement...",
-        label_visibility="collapsed",
-    )
-
-with col_gear:
-    st.markdown("<div class='gear-wrapper' style='padding-top:8px'>", unsafe_allow_html=True)
-    if st.button("⚙️", key="gear_toggle", help="Framing options"):
-        st.session_state.show_framing = not st.session_state.show_framing
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with col_btn:
-    run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
-
-# ── Expandable framing panel (inside the pill) ──
-if st.session_state.show_framing:
-    st.markdown('<div class="framing-panel">', unsafe_allow_html=True)
-    col_angle, col_strength = st.columns([1, 1], gap="large")
-    with col_angle:
-        st.markdown(
-            '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">⚖️ Advocacy angle (optional)</p>',
-            unsafe_allow_html=True,
-        )
-        advocacy_angle = st.text_input(
-            "advocacy_angle_input",
-            placeholder="e.g., Free-market perspective, climate urgency...",
+    with col_input:
+        hypothesis = st.text_input(
+            "hypothesis",
+            placeholder="Enter a testable statement...",
             label_visibility="collapsed",
         )
-    with col_strength:
-        st.markdown(
-            '<div style="display:flex;justify-content:space-between;align-items:center;">'
-            '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin:0;">Advocacy strength</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        advocacy_temperature = st.slider(
-            "advocacy_strength_slider",
-            min_value=1, max_value=10, value=1,
-            label_visibility="collapsed",
-            disabled=not advocacy_angle.strip(),
-        )
-        if advocacy_angle.strip():
-            if advocacy_temperature <= 3:
-                lvl = "Objective & Clinical"
-            elif advocacy_temperature <= 7:
-                lvl = "Moderate Emphasis"
-            else:
-                lvl = "Subtle lean — data stays honest, narrative shifts"
+
+    with col_gear:
+        st.markdown('<div class="gear-col">', unsafe_allow_html=True)
+        if st.button("⚙️", key="gear_toggle", help="Framing options"):
+            st.session_state.show_framing = not st.session_state.show_framing
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_btn:
+        st.markdown('<div class="draft-col">', unsafe_allow_html=True)
+        run_button = st.button("Draft Paper →", type="primary", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Framing panel (inside the pill container) ──
+    if st.session_state.show_framing:
+        st.markdown('<div class="framing-divider">', unsafe_allow_html=True)
+        col_angle, col_strength = st.columns([1, 1], gap="large")
+        with col_angle:
             st.markdown(
-                f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
+                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">⚖️ Advocacy angle (optional)</p>',
                 unsafe_allow_html=True,
             )
-    st.markdown('</div>', unsafe_allow_html=True)
-else:
+            advocacy_angle = st.text_input(
+                "advocacy_angle_input",
+                placeholder="e.g., Free-market perspective, climate urgency...",
+                label_visibility="collapsed",
+            )
+        with col_strength:
+            st.markdown(
+                '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin:0;">Advocacy strength</p>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            advocacy_temperature = st.slider(
+                "advocacy_strength_slider",
+                min_value=1, max_value=10, value=1,
+                label_visibility="collapsed",
+                disabled=not advocacy_angle.strip(),
+            )
+            if advocacy_angle.strip():
+                if advocacy_temperature <= 3:
+                    lvl = "Objective & Clinical"
+                elif advocacy_temperature <= 7:
+                    lvl = "Moderate Emphasis"
+                else:
+                    lvl = "Subtle lean — data stays honest, narrative shifts"
+                st.markdown(
+                    f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+if not st.session_state.show_framing:
     advocacy_angle = ""
     advocacy_temperature = 1
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
