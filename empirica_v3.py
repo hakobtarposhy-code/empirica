@@ -1,11 +1,12 @@
 # ============================================================================
-# EMPIRICA v1.3.0 — Complete Research Pipeline
+# EMPIRICA v1.4.0 — Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
 #         academic paper formatting (margins, spacing, page numbers, title page)
 # v1.2.0: MECE policy section (bold lead sentences), conclusion/policy split
 # v1.3.0: OMML equations in Word (native equation objects), UI overhaul
+# v1.4.0: AMECO dataset via DBnomics — EU macro/fiscal hypotheses auto-route
 #
 # Usage:
 #   As module (from Streamlit/app.py):
@@ -42,6 +43,13 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
 import anthropic
+
+try:
+    from dbnomics import fetch_series as dbnomics_fetch
+    HAS_DBNOMICS = True
+except ImportError:
+    HAS_DBNOMICS = False
+    print("⚠️  dbnomics not installed — AMECO source unavailable. pip install dbnomics")
 
 warnings.filterwarnings("ignore")
 
@@ -433,17 +441,38 @@ def ai_parse_hypothesis(hypothesis_text: str) -> dict:
     print("\n🧠 AGENT 1: Parsing hypothesis with AI (extended thinking)...")
 
     plan = ask_claude_json(
-        system="""You are a research methodology expert with deep knowledge of the World Bank's data catalog (16,000+ indicators).
+        system="""You are a research methodology expert with deep knowledge of the World Bank's data catalog (16,000+ indicators) AND the European Commission's AMECO database (481 datasets, 40+ EU/OECD countries).
 
-Given a hypothesis, pick the BEST World Bank indicator codes for X (cause) and Y (effect).
+Given a hypothesis, decide the BEST data source and pick indicator codes.
 
-CRITICAL RULES:
-1. X and Y MUST be from DIFFERENT domains — never two GDP indicators, two health indicators, etc.
-2. The relationship must be CAUSAL/INTERESTING, not an accounting identity
-3. PREFER indicators with GOOD data coverage — most countries, most years (2000-2023)
-4. Pick 2-4 control variables that are CONFOUNDERS
-5. You know thousands of World Bank indicator codes from your training — use ANY valid one
+DATA SOURCE SELECTION:
+- Use "worldbank" for: global/developing country topics, health, education, poverty, environment, infrastructure, demographics
+- Use "ameco" for: EU/euro area macro-fiscal topics — fiscal policy, output gaps, structural deficits, unit labour costs, government debt, inflation (HICP), unemployment, current account, potential GDP, cyclical adjustment
+- Use "both" only if the hypothesis explicitly compares EU vs global data (rare)
 
+AMECO DATASET CODES (via DBnomics, provider="AMECO"):
+  ZUTN — Unemployment rate (total)
+  UVGD — GDP growth rate (real)
+  OVGD — GDP at current prices
+  AVGDGP — GDP per capita
+  UBCA — Current account balance (% GDP)
+  UICP — Inflation (HICP)
+  UYCP — Inflation (GDP deflator)
+  UDGG — Government gross debt (% GDP)
+  UBLGE — Government balance (% GDP)
+  UBLGAP — Structural budget balance (% potential GDP)
+  PLCDQ — Nominal unit labour cost
+  AMGN — Imports of goods and services
+  AXGN — Exports of goods and services
+  UOGG — Output gap (% potential GDP)
+  OKND — Gross fixed capital formation (% GDP)
+  NETD — Net lending/borrowing
+  URTL — Long-term interest rate
+  USTN — Short-term interest rate
+AMECO dimensions: use {"geo": ["ea20"]} for euro area aggregate, or omit for all countries.
+AMECO years: typically 1960-2025 (includes Commission forecasts).
+
+WORLD BANK INDICATOR CODES (you know thousands — use any valid one):
 WELL-POPULATED indicators (prefer these when possible):
 GDP: NY.GDP.PCAP.PP.KD, NY.GDP.MKTP.KD.ZG, NY.GDP.PCAP.KD.ZG
 Trade: NE.EXP.GNFS.ZS, NE.IMP.GNFS.ZS, TG.VAL.TOTL.GD.ZS
@@ -458,20 +487,34 @@ Environment: EN.ATM.CO2E.PC, EG.USE.ELEC.KH.PC, AG.LND.FRST.ZS
 Poverty: SI.POV.DDAY (note: SI.POV.GINI has VERY sparse data — avoid it)
 Water/Sanitation: SH.H2O.SMDW.ZS, SH.STA.SMSS.ZS
 
-But you are NOT limited to this list. Use any valid World Bank indicator code you know.
-If the hypothesis involves a niche topic (e.g., renewable energy, military spending, tourism),
-use the appropriate specialized indicator.
+CRITICAL RULES:
+1. X and Y MUST be from DIFFERENT domains — never two GDP indicators, two health indicators, etc.
+2. The relationship must be CAUSAL/INTERESTING, not an accounting identity
+3. PREFER indicators with GOOD data coverage — most countries, most years
+4. Pick 2-4 control variables that are CONFOUNDERS (from the SAME source as X/Y)
+5. For AMECO: control variables should also be AMECO dataset codes
 
 Return JSON:
 {
+    "data_source": "worldbank" | "ameco" | "both",
     "title": "Academic paper title (specific, not generic)",
     "statement": "Cleaned hypothesis",
-    "independent_var": "World Bank indicator code for X (the CAUSE)",
-    "dependent_var": "World Bank indicator code for Y (the EFFECT)",
+    "independent_var": "World Bank indicator code for X (ONLY if data_source is worldbank/both)",
+    "dependent_var": "World Bank indicator code for Y (ONLY if data_source is worldbank/both)",
+    "ameco_independent": {
+        "dataset": "AMECO dataset code (e.g. UDGG)",
+        "dimensions": {"geo": ["ea20"]},
+        "label": "Human-readable label"
+    },
+    "ameco_dependent": {
+        "dataset": "AMECO dataset code",
+        "dimensions": {"geo": ["ea20"]},
+        "label": "Human-readable label"
+    },
     "x_label": "Human-readable label for X",
     "y_label": "Human-readable label for Y",
     "control_vars": [
-        {"code": "indicator code", "label": "label", "rationale": "why"}
+        {"code": "indicator code OR AMECO dataset", "label": "label", "rationale": "why", "source": "worldbank|ameco"}
     ],
     "start_year": 2000,
     "end_year": 2023,
@@ -481,55 +524,76 @@ Return JSON:
     "semantic_scholar_query_broad": "broader/different-angle Semantic Scholar query",
     "jel_codes": "JEL classification codes (e.g., O11, C23, I15)",
     "keywords": "4-6 keywords for the paper",
-    "reasoning": "why these indicators are the best choice"
-}""",
+    "reasoning": "why these indicators and this data source are the best choice"
+}
+
+NOTE: If data_source is "worldbank", the ameco_* fields can be null/omitted.
+If data_source is "ameco", independent_var/dependent_var can be null/omitted.""",
         user=f'Hypothesis: "{hypothesis_text}"\n\nPick the BEST indicators. Prefer well-populated ones. X = CAUSE, Y = EFFECT.\nAlso generate TWO search queries per database — one focused, one broader — to maximize literature coverage.',
         extended_thinking=True,           # ← CHANGE 2: thinking ON for Agent 1
         thinking_budget=10000,
     )
 
-    if check_tautology(plan["independent_var"], plan["dependent_var"]):
-        print(f"  ⚠️  TAUTOLOGY DETECTED: {plan['independent_var']} -> {plan['dependent_var']}")
+    source = plan.get("data_source", "worldbank")
 
-        h = hypothesis_text.lower()
-        if "health" in h and ("life expectancy" in h or "mortality" in h or "life" in h):
-            plan["independent_var"] = "SH.XPD.CHEX.GD.ZS"
-            plan["dependent_var"] = "SP.DYN.LE00.IN"
-            plan["x_label"] = "Current health expenditure (% of GDP)"
-            plan["y_label"] = "Life expectancy at birth (years)"
-        elif "education" in h and ("gdp" in h or "growth" in h or "income" in h):
-            plan["independent_var"] = "SE.XPD.TOTL.GD.ZS"
-            plan["dependent_var"] = "NY.GDP.PCAP.PP.KD"
-            plan["x_label"] = "Government expenditure on education (% of GDP)"
-            plan["y_label"] = "GDP per capita (PPP, constant 2017 $)"
-        elif "internet" in h and ("gdp" in h or "growth" in h or "income" in h):
-            plan["independent_var"] = "IT.NET.USER.ZS"
-            plan["dependent_var"] = "NY.GDP.PCAP.PP.KD"
-            plan["x_label"] = "Individuals using the Internet (% of population)"
-            plan["y_label"] = "GDP per capita (PPP, constant 2017 $)"
+    if source in ("worldbank", "both"):
+        # Tautology check (World Bank codes only)
+        if check_tautology(plan.get("independent_var", ""), plan.get("dependent_var", "")):
+            print(f"  ⚠️  TAUTOLOGY DETECTED: {plan['independent_var']} -> {plan['dependent_var']}")
 
-        print(f"  ✅ Corrected to: {plan['x_label']} -> {plan['y_label']}")
+            h = hypothesis_text.lower()
+            if "health" in h and ("life expectancy" in h or "mortality" in h or "life" in h):
+                plan["independent_var"] = "SH.XPD.CHEX.GD.ZS"
+                plan["dependent_var"] = "SP.DYN.LE00.IN"
+                plan["x_label"] = "Current health expenditure (% of GDP)"
+                plan["y_label"] = "Life expectancy at birth (years)"
+            elif "education" in h and ("gdp" in h or "growth" in h or "income" in h):
+                plan["independent_var"] = "SE.XPD.TOTL.GD.ZS"
+                plan["dependent_var"] = "NY.GDP.PCAP.PP.KD"
+                plan["x_label"] = "Government expenditure on education (% of GDP)"
+                plan["y_label"] = "GDP per capita (PPP, constant 2017 $)"
+            elif "internet" in h and ("gdp" in h or "growth" in h or "income" in h):
+                plan["independent_var"] = "IT.NET.USER.ZS"
+                plan["dependent_var"] = "NY.GDP.PCAP.PP.KD"
+                plan["x_label"] = "Individuals using the Internet (% of population)"
+                plan["y_label"] = "GDP per capita (PPP, constant 2017 $)"
 
-    if len(plan.get("control_vars", [])) < 2:
-        default_controls = [
-            {"code": "NY.GDP.PCAP.PP.KD", "label": "GDP per capita (PPP)", "rationale": "Income level confounder"},
-            {"code": "SE.SEC.ENRR", "label": "Secondary school enrollment", "rationale": "Education confounder"},
-            {"code": "SP.URB.TOTL.IN.ZS", "label": "Urban population (%)", "rationale": "Urbanization confounder"},
-        ]
-        existing_codes = {c["code"] for c in plan.get("control_vars", [])}
-        for dc in default_controls:
-            if dc["code"] not in existing_codes and dc["code"] != plan["independent_var"] and dc["code"] != plan["dependent_var"]:
-                plan.setdefault("control_vars", []).append(dc)
-                if len(plan["control_vars"]) >= 3:
-                    break
+            print(f"  ✅ Corrected to: {plan['x_label']} -> {plan['y_label']}")
 
+        # Default controls fallback (World Bank)
+        if len(plan.get("control_vars", [])) < 2:
+            default_controls = [
+                {"code": "NY.GDP.PCAP.PP.KD", "label": "GDP per capita (PPP)", "rationale": "Income level confounder", "source": "worldbank"},
+                {"code": "SE.SEC.ENRR", "label": "Secondary school enrollment", "rationale": "Education confounder", "source": "worldbank"},
+                {"code": "SP.URB.TOTL.IN.ZS", "label": "Urban population (%)", "rationale": "Urbanization confounder", "source": "worldbank"},
+            ]
+            existing_codes = {c["code"] for c in plan.get("control_vars", [])}
+            for dc in default_controls:
+                if dc["code"] not in existing_codes and dc["code"] != plan.get("independent_var") and dc["code"] != plan.get("dependent_var"):
+                    plan.setdefault("control_vars", []).append(dc)
+                    if len(plan["control_vars"]) >= 3:
+                        break
+
+        x_code = plan.get('independent_var', '?')
+        y_code = plan.get('dependent_var', '?')
+    else:
+        # AMECO source — labels from ameco_independent/dependent
+        ameco_x = plan.get("ameco_independent", {})
+        ameco_y = plan.get("ameco_dependent", {})
+        plan.setdefault("x_label", ameco_x.get("label", ameco_x.get("dataset", "X")))
+        plan.setdefault("y_label", ameco_y.get("label", ameco_y.get("dataset", "Y")))
+        x_code = f"AMECO/{ameco_x.get('dataset', '?')}"
+        y_code = f"AMECO/{ameco_y.get('dataset', '?')}"
+
+    print(f"  -> Source: {source}")
     print(f"  -> Title: {plan['title']}")
-    print(f"  -> X: {plan['x_label']} ({plan['independent_var']})")
-    print(f"  -> Y: {plan['y_label']} ({plan['dependent_var']})")
-    print(f"  -> Controls: {', '.join(c['label'] for c in plan['control_vars'])}")
+    print(f"  -> X: {plan['x_label']} ({x_code})")
+    print(f"  -> Y: {plan['y_label']} ({y_code})")
+    print(f"  -> Controls: {', '.join(c['label'] for c in plan.get('control_vars', []))}")
     print(f"  -> Years: {plan['start_year']}-{plan['end_year']}")
 
-    plan = validate_and_fix_indicators(plan)
+    if source in ("worldbank", "both"):
+        plan = validate_and_fix_indicators(plan)
 
     return plan
 
@@ -600,6 +664,89 @@ class WorldBankFetcher:
         else:
             print(f"    ⚠️  No data returned for {indicator}")
         return df
+
+
+class DBnomicsFetcher:
+    """Fetches AMECO data via DBnomics. Returns same DataFrame shape as WorldBankFetcher."""
+    PROVIDER = "AMECO"
+
+    # AMECO geo codes → readable country names (common ones)
+    GEO_LABELS = {
+        "aut": "Austria", "bel": "Belgium", "bgr": "Bulgaria", "hrv": "Croatia",
+        "cyp": "Cyprus", "cze": "Czechia", "dnk": "Denmark", "est": "Estonia",
+        "fin": "Finland", "fra": "France", "deu": "Germany", "grc": "Greece",
+        "hun": "Hungary", "irl": "Ireland", "ita": "Italy", "lva": "Latvia",
+        "ltu": "Lithuania", "lux": "Luxembourg", "mlt": "Malta", "nld": "Netherlands",
+        "pol": "Poland", "prt": "Portugal", "rou": "Romania", "svk": "Slovakia",
+        "svn": "Slovenia", "esp": "Spain", "swe": "Sweden", "gbr": "United Kingdom",
+        "usa": "United States", "jpn": "Japan", "can": "Canada", "aus": "Australia",
+        "nor": "Norway", "che": "Switzerland", "isl": "Iceland", "kor": "South Korea",
+        "nzl": "New Zealand", "mex": "Mexico", "tur": "Turkey",
+        "ea20": "Euro Area (20)", "ea19": "Euro Area (19)", "eu27": "EU-27",
+    }
+
+    # Aggregates to exclude from country-level analysis (like WB aggregates)
+    AGGREGATES = {"ea20", "ea19", "ea18", "eu27", "eu28", "eu15", "g7", "g20", "oecd"}
+
+    def fetch(self, dataset_code: str, dimensions: dict = None,
+              start_year: int = 2000, end_year: int = 2023,
+              include_aggregates: bool = False) -> pd.DataFrame:
+        """Fetch AMECO dataset via DBnomics. Returns DataFrame[country, country_code, year, value]."""
+        if not HAS_DBNOMICS:
+            print(f"    ⚠️  dbnomics not installed — cannot fetch AMECO/{dataset_code}")
+            return pd.DataFrame()
+
+        print(f"  📊 Fetching AMECO/{dataset_code} via DBnomics...")
+        try:
+            df = dbnomics_fetch(
+                provider_code=self.PROVIDER,
+                dataset_code=dataset_code,
+                dimensions=dimensions or {}
+            )
+
+            if df.empty:
+                print(f"    ⚠️  No data returned for AMECO/{dataset_code}")
+                return pd.DataFrame()
+
+            # Standardize columns to match WorldBankFetcher output
+            df = df.rename(columns={"original_period": "year"})
+            df["year"] = pd.to_numeric(df["year"], errors="coerce")
+            df["value"] = pd.to_numeric(df["value"], errors="coerce")
+            df = df.dropna(subset=["year", "value"])
+            df["year"] = df["year"].astype(int)
+            df = df[(df["year"] >= start_year) & (df["year"] <= end_year)]
+
+            # Extract country from geo dimension
+            geo_col = None
+            for candidate in ["geo", "GEO", "country", "unit"]:
+                if candidate in df.columns:
+                    geo_col = candidate
+                    break
+
+            if geo_col is None:
+                # Try to extract from series_code (format: provider/dataset/series)
+                if "series_code" in df.columns:
+                    df["country_code"] = df["series_code"].str.split(".").str[-1].str.lower()
+                else:
+                    print(f"    ⚠️  Cannot identify country column in AMECO/{dataset_code}")
+                    return pd.DataFrame()
+            else:
+                df["country_code"] = df[geo_col].astype(str).str.lower()
+
+            # Filter out aggregates unless requested
+            if not include_aggregates:
+                df = df[~df["country_code"].isin(self.AGGREGATES)]
+
+            # Map codes to readable names
+            df["country"] = df["country_code"].map(self.GEO_LABELS).fillna(df["country_code"].str.upper())
+
+            df = df[["country", "country_code", "year", "value"]].reset_index(drop=True)
+            print(f"    ✅ {len(df)} obs, {df['country'].nunique()} countries")
+            return df
+
+        except Exception as e:
+            print(f"    ⚠️  DBnomics error for AMECO/{dataset_code}: {e}")
+            return pd.DataFrame()
 
 
 class SemanticScholarSearcher:
@@ -1120,10 +1267,10 @@ Avoid starting every paragraph with an author name. Lead with the idea, then cit
             "methodology_results": (
                 f"You are an economics journal writer. Write ONLY methodology and results (600-800 words). {WRITING_RULES}",
                 f"""Hypothesis: {self.plan['statement']}
-X: {self.plan['x_label']} ({self.plan['independent_var']})
-Y: {self.plan['y_label']} ({self.plan['dependent_var']})
+X: {self.plan['x_label']} ({self.plan.get('independent_var') or 'AMECO/' + self.plan.get('ameco_independent', {}).get('dataset', '?')})
+Y: {self.plan['y_label']} ({self.plan.get('dependent_var') or 'AMECO/' + self.plan.get('ameco_dependent', {}).get('dataset', '?')})
 Controls: {', '.join(c['label'] for c in self.plan.get('control_vars', []))}
-Source: World Bank World Development Indicators
+Source: {"European Commission AMECO database via DBnomics" if self.plan.get('_actual_source') == 'ameco' else "World Bank World Development Indicators"}
 
 RESULTS (focus on controlled and fixed-effects, not bivariate OLS):
 {json.dumps(self.results, indent=2, default=str)}
@@ -1732,14 +1879,88 @@ class DocumentAssembler:
 class ReproductionScriptGenerator:
     def generate(self, plan, review, results, output_path):
         print(f"  💻 Reproduction script: {output_path}")
+        actual_source = plan.get("_actual_source", "worldbank")
+
         controls_code = ""
         for ctrl in plan.get("control_vars", []):
             controls_code += f'    "{ctrl["code"]}",  # {ctrl["label"]}\n'
 
-        script = f'''#!/usr/bin/env python3
+        if actual_source == "ameco":
+            ameco_x = plan.get("ameco_independent", {})
+            ameco_y = plan.get("ameco_dependent", {})
+            script = f'''#!/usr/bin/env python3
 """
 Reproduction Script - Generated by Empirica
 Hypothesis: {plan["statement"]}
+Data source: European Commission AMECO database via DBnomics
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+Run: pip install pandas statsmodels scipy dbnomics
+     python reproduce.py
+"""
+import pandas as pd, numpy as np
+import statsmodels.api as sm, scipy.stats as stats
+from dbnomics import fetch_series
+
+X_DATASET = "{ameco_x.get('dataset', '')}"
+Y_DATASET = "{ameco_y.get('dataset', '')}"
+X_DIMS = {ameco_x.get('dimensions', {})}
+Y_DIMS = {ameco_y.get('dimensions', {})}
+START, END = {plan.get("start_year", 2000)}, {plan.get("end_year", 2023)}
+WINSORIZE = {review.get("winsorize", False)}
+WIN_PCT = {review.get("winsorize_percentile", 1)} / 100
+MIN_OBS = {review.get("min_observations_per_country", 3)}
+AGGREGATES = {{"ea20","ea19","ea18","eu27","eu28","eu15","g7","g20","oecd"}}
+
+def fetch_ameco(dataset, dims):
+    df = fetch_series(provider_code="AMECO", dataset_code=dataset, dimensions=dims)
+    df["year"] = pd.to_numeric(df["original_period"], errors="coerce")
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["year", "value"])
+    df["year"] = df["year"].astype(int)
+    df = df[(df["year"] >= START) & (df["year"] <= END)]
+    geo_col = next((c for c in ["geo", "GEO", "country"] if c in df.columns), None)
+    if geo_col:
+        df["country_code"] = df[geo_col].astype(str).str.lower()
+        df["country"] = df["country_code"]
+    df = df[~df["country_code"].isin(AGGREGATES)]
+    return df[["country", "country_code", "year", "value"]]
+
+print("Fetching AMECO data...")
+xd = fetch_ameco(X_DATASET, X_DIMS)
+yd = fetch_ameco(Y_DATASET, Y_DIMS)
+df = xd.rename(columns={{"value":"x"}}).merge(yd.rename(columns={{"value":"y"}})[["country","year","y"]], on=["country","year"])
+
+if WINSORIZE:
+    for c in ["x","y"]:
+        df[c] = df[c].clip(df[c].quantile(WIN_PCT), df[c].quantile(1-WIN_PCT))
+counts = df.groupby("country").size()
+df = df[df["country"].isin(counts[counts >= MIN_OBS].index)]
+print(f"Data: {{len(df)}} obs, {{df['country'].nunique()}} countries")
+
+X = sm.add_constant(df["x"])
+m = sm.OLS(df["y"], X).fit()
+print(f"OLS: coef={{m.params.iloc[1]:.6f}}, p={{m.pvalues.iloc[1]:.6f}}, R2={{m.rsquared:.4f}}")
+
+dfe = df.copy()
+for c in ["x","y"]: dfe[f"{{c}}_dm"] = dfe[c] - dfe.groupby("country")[c].transform("mean")
+Xfe = sm.add_constant(dfe["x_dm"])
+fem = sm.OLS(dfe["y_dm"], Xfe).fit()
+print(f"FE:  coef={{fem.params.iloc[-1]:.6f}}, p={{fem.pvalues.iloc[-1]:.6f}}, R2w={{fem.rsquared:.4f}}")
+
+pr,pp = stats.pearsonr(df["x"], df["y"])
+sr,sp = stats.spearmanr(df["x"], df["y"])
+print(f"Pearson: r={{pr:.4f}} (p={{pp:.6f}})")
+print(f"Spearman: rho={{sr:.4f}} (p={{sp:.6f}})")
+print("Done.")
+'''
+        else:
+            # ── World Bank reproduction script (original) ──
+            script = f'''#!/usr/bin/env python3
+"""
+Reproduction Script - Generated by Empirica
+Hypothesis: {plan["statement"]}
+Data source: World Bank World Development Indicators
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 Run: pip install pandas statsmodels scipy requests
@@ -1748,8 +1969,8 @@ Run: pip install pandas statsmodels scipy requests
 import requests, pandas as pd, numpy as np
 import statsmodels.api as sm, scipy.stats as stats
 
-X_IND = "{plan["independent_var"]}"
-Y_IND = "{plan["dependent_var"]}"
+X_IND = "{plan.get("independent_var", "")}"
+Y_IND = "{plan.get("dependent_var", "")}"
 CONTROLS = [
 {controls_code}]
 START, END = {plan.get("start_year", 2000)}, {plan.get("end_year", 2023)}
@@ -1813,7 +2034,7 @@ print("Done.")
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.3.0")
+    print("  EMPIRICA v1.4.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print("=" * 60)
@@ -1823,22 +2044,57 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     # Agent 1: Parse (extended thinking)
     plan = ai_parse_hypothesis(hypothesis)
 
-    # Agent 2a: Fetch data
-    print("\n📊 AGENT 2a: Fetching World Bank data...")
-    wb = WorldBankFetcher()
-    x_data = wb.fetch(plan["independent_var"], plan["start_year"], plan["end_year"])
-    y_data = wb.fetch(plan["dependent_var"], plan["start_year"], plan["end_year"])
-    if x_data.empty or y_data.empty:
-        raise ValueError("Could not fetch data from World Bank.")
+    # Agent 2a: Fetch data (source-aware router)
+    source = plan.get("data_source", "worldbank")
+    print(f"\n📊 AGENT 2a: Fetching data (source: {source})...")
 
+    if source == "ameco" and HAS_DBNOMICS:
+        # ── AMECO via DBnomics ──
+        dbn = DBnomicsFetcher()
+        ameco_x = plan.get("ameco_independent", {})
+        ameco_y = plan.get("ameco_dependent", {})
+        if not ameco_x or not ameco_y:
+            raise ValueError("AMECO selected but ameco_independent/dependent not provided by Agent 1.")
+        x_data = dbn.fetch(ameco_x["dataset"], ameco_x.get("dimensions"), plan["start_year"], plan["end_year"])
+        y_data = dbn.fetch(ameco_y["dataset"], ameco_y.get("dimensions"), plan["start_year"], plan["end_year"])
+        if x_data.empty or y_data.empty:
+            print("  ⚠️  AMECO fetch failed — falling back to World Bank...")
+            source = "worldbank"  # fallback below
+        else:
+            # Use AMECO labels
+            plan.setdefault("x_label", ameco_x.get("label", ameco_x["dataset"]))
+            plan.setdefault("y_label", ameco_y.get("label", ameco_y["dataset"]))
+            plan["_actual_source"] = "ameco"
+
+    if source == "ameco" and not HAS_DBNOMICS:
+        print("  ⚠️  dbnomics not installed — falling back to World Bank...")
+        source = "worldbank"
+
+    if source in ("worldbank", "both"):
+        # ── World Bank (original path) ──
+        wb = WorldBankFetcher()
+        x_data = wb.fetch(plan["independent_var"], plan["start_year"], plan["end_year"])
+        y_data = wb.fetch(plan["dependent_var"], plan["start_year"], plan["end_year"])
+        if x_data.empty or y_data.empty:
+            raise ValueError("Could not fetch data from World Bank.")
+        plan["_actual_source"] = "worldbank"
+
+    # ── SAME MERGE — downstream is source-agnostic ──
     df = x_data.rename(columns={"value": "x"}).merge(
         y_data.rename(columns={"value": "y"})[["country", "year", "y"]],
         on=["country", "year"],
     )
 
+    # Fetch controls (from same source)
     controls_fetched = []
     for ctrl in plan.get("control_vars", []):
-        cd = wb.fetch(ctrl["code"], plan["start_year"], plan["end_year"])
+        ctrl_source = ctrl.get("source", plan.get("_actual_source", "worldbank"))
+        if ctrl_source == "ameco" and HAS_DBNOMICS:
+            dbn = DBnomicsFetcher()
+            cd = dbn.fetch(ctrl["code"], ctrl.get("dimensions"), plan["start_year"], plan["end_year"])
+        else:
+            wb = WorldBankFetcher()
+            cd = wb.fetch(ctrl["code"], plan["start_year"], plan["end_year"])
         if not cd.empty:
             cn = f"control_{ctrl['code'].replace('.', '_')}"
             cd = cd.rename(columns={"value": cn})
@@ -1895,7 +2151,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR):
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v1.3.0 COMPLETE")
+    print("  ✅ EMPIRICA v1.4.0 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
