@@ -1022,7 +1022,11 @@ run_button = st.button("d", key="pill_draft")
 if st.session_state.show_framing:
     advocacy_angle = st.text_input("a", label_visibility="collapsed", key="adv_angle",
                                     placeholder="e.g., Free-market perspective...")
-    advocacy_temperature = st.slider("t", 1, 10, 1, label_visibility="collapsed", key="adv_temp")
+    _raw_temp = st.text_input("t", label_visibility="collapsed", key="adv_temp", value="1")
+    try:
+        advocacy_temperature = max(1, min(10, int(_raw_temp)))
+    except (ValueError, TypeError):
+        advocacy_temperature = 1
 else:
     advocacy_angle = ""
     advocacy_temperature = 1
@@ -1234,31 +1238,44 @@ _pill_html = f"""
   }}
 
   // ══════════════════════════════════════════════════════════
-  // DRAFT PAPER: sync text to hidden widget → click hidden button
+  // DRAFT PAPER: sync ALL inputs to hidden widgets → click button
   // ══════════════════════════════════════════════════════════
+
+  // Helper: sync a value to a hidden Streamlit text input
+  function syncText(cssSelector, value) {{
+    const el = doc.querySelector(cssSelector + ' input');
+    if (!el) return;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    ).set;
+    el.focus();
+    setter.call(el, String(value));
+    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    el.blur();
+  }}
+
   document.getElementById('draftBtn').addEventListener('click', () => {{
     const hyp = document.getElementById('pillInput').value.trim();
     if (!hyp) {{ document.getElementById('pillInput').focus(); return; }}
 
-    // Sync hypothesis text to hidden Streamlit input
-    const stInput = doc.querySelector('.st-key-pill_hyp input');
-    if (stInput) {{
-      // Use React's native setter to bypass synthetic event system
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      ).set;
-      stInput.focus();
-      setter.call(stInput, hyp);
-      stInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-      stInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-      stInput.blur();
+    // 1. Sync hypothesis
+    syncText('.st-key-pill_hyp', hyp);
+
+    // 2. If framing panel is open, sync advocacy angle + temperature
+    const isFramingOpen = panel.classList.contains('open');
+    if (isFramingOpen) {{
+      const angle = document.getElementById('advAngleInput').value;
+      const temp = document.getElementById('advSlider').value;
+      syncText('.st-key-adv_angle', angle);
+      syncText('.st-key-adv_temp', temp);
     }}
 
-    // Wait for React to commit the value, then click Draft button
+    // 3. Wait for React to commit all values, then click Draft button
     setTimeout(() => {{
       const stBtn = doc.querySelector('.st-key-pill_draft button');
       if (stBtn) stBtn.click();
-    }}, 250);
+    }}, 400);
   }});
 
   // ── Enter key in input ──
