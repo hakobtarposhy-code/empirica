@@ -984,237 +984,381 @@ if not api_key:
         if not api_key:
             st.warning("Add your API key to get started")
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# INPUT
+# INPUT — Pure HTML pill with Streamlit bridge via query params
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown('<div id="empirica-input"></div>', unsafe_allow_html=True)
 
-# Toggle state for framing panel
-if "show_framing" not in st.session_state:
-    st.session_state.show_framing = False
+# ── Read state from URL query params (set by the HTML pill's JavaScript) ──
+_qp = st.query_params
+_hyp_from_url   = _qp.get("hyp", "")
+_run_from_url   = _qp.get("run", "") == "1"
+_framing_open   = _qp.get("framing", "") == "1"
+_angle_from_url = _qp.get("angle", "")
+try:
+    _temp_from_url = int(_qp.get("temp", "1"))
+except ValueError:
+    _temp_from_url = 1
 
-# ── The input container ──
-with st.container(border=True):
-    col_input, col_gear, col_btn = st.columns([6, 0.6, 2], gap="small", vertical_alignment="center")
+# Transfer to working variables
+hypothesis           = _hyp_from_url
+show_framing         = _framing_open
+advocacy_angle       = _angle_from_url if _framing_open else ""
+advocacy_temperature = _temp_from_url  if _framing_open else 1
 
-    with col_input:
-        hypothesis = st.text_input(
-            "hypothesis",
-            placeholder="Enter a testable statement...",
-            label_visibility="collapsed",
-        )
+# Run flag: consume from URL into session state so del doesn't lose it
+# Flow: URL has run=1 → store in session_state → del from URL (triggers rerun)
+#       → on rerun, pop from session_state → run_button = True → pipeline runs
+if _run_from_url:
+    st.session_state["_run_requested"] = True
+    try:
+        del st.query_params["run"]
+    except Exception:
+        pass
+run_button = st.session_state.pop("_run_requested", False)
 
-    with col_gear:
-        if st.button("⚙", key="gear_toggle", help="Framing options", use_container_width=True):
-            st.session_state.show_framing = not st.session_state.show_framing
-            st.rerun()
+# ── Compute dynamic values for the HTML template ──
+_adv_label = ""
+if advocacy_angle.strip():
+    if advocacy_temperature <= 3:
+        _adv_label = "Objective &amp; Clinical"
+    elif advocacy_temperature <= 7:
+        _adv_label = "Moderate Emphasis"
+    else:
+        _adv_label = "Subtle lean — data stays honest, narrative shifts"
 
-    with col_btn:
-        run_button = st.button("Draft Paper →", type="primary", use_container_width=True, key="draft_btn")
+_gear_bg    = "#EFF6FF" if show_framing else "transparent"
+_gear_color = "#3B82F6" if show_framing else "#94A3B8"
+_framing_display = "flex" if show_framing else "none"
+_hyp_escaped = hypothesis.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+_angle_escaped = advocacy_angle.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
-    # ── Framing panel (inside the container) ──
-    if st.session_state.show_framing:
-        st.divider()
-        col_angle, col_strength = st.columns([1, 1], gap="large")
-        with col_angle:
-            st.markdown(
-                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">⚖️ Advocacy angle (optional)</p>',
-                unsafe_allow_html=True,
-            )
-            advocacy_angle = st.text_input(
-                "advocacy_angle_input",
-                placeholder="e.g., Free-market perspective, climate urgency...",
-                label_visibility="collapsed",
-            )
-        with col_strength:
-            st.markdown(
-                '<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:#64748b;margin-bottom:4px;">Advocacy strength</p>',
-                unsafe_allow_html=True,
-            )
-            advocacy_temperature = st.slider(
-                "advocacy_strength_slider",
-                min_value=1, max_value=10, value=1,
-                label_visibility="collapsed",
-                disabled=not advocacy_angle.strip(),
-            )
-            if advocacy_angle.strip():
-                if advocacy_temperature <= 3:
-                    lvl = "Objective & Clinical"
-                elif advocacy_temperature <= 7:
-                    lvl = "Moderate Emphasis"
-                else:
-                    lvl = "Subtle lean — data stays honest, narrative shifts"
-                st.markdown(
-                    f'<p style="font-size:11px;color:#2563eb;font-style:italic;font-weight:500;margin-top:-8px;">{lvl}</p>',
-                    unsafe_allow_html=True,
-                )
+# ── Render the pure HTML pill ──
+_pill_html = f"""
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: transparent; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }}
 
-if not st.session_state.show_framing:
-    advocacy_angle = ""
-    advocacy_temperature = 1
+  .pill {{
+    background: #FFFFFF;
+    border: 2px solid #E2E8F0;
+    border-radius: 2.5rem;
+    padding: 0.5rem;
+    box-shadow: 0 25px 60px -12px rgba(30,64,175,0.05);
+    transition: border-color 0.3s ease;
+    overflow: hidden;
+  }}
+  .pill:focus-within {{
+    border-color: #93C5FD;
+  }}
 
-# ── JavaScript injection to restyle the pill container ──
-# components.html renders in an iframe that can access parent document
-components.html("""
+  .pill-row {{
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }}
+
+  .beaker-icon {{
+    padding-left: 1.5rem;
+    color: #3B82F6;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }}
+
+  .pill-input {{
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 1.35rem 1rem;
+    font-size: 1.12rem;
+    font-weight: 300;
+    color: #0F172A;
+    font-family: inherit;
+  }}
+  .pill-input::placeholder {{
+    color: #94A3B8;
+    font-weight: 300;
+  }}
+
+  .gear-btn {{
+    width: 44px;
+    height: 44px;
+    border-radius: 1rem;
+    border: none;
+    background: {_gear_bg};
+    color: {_gear_color};
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+  }}
+  .gear-btn:hover {{
+    background: #EFF6FF;
+    color: #3B82F6;
+  }}
+
+  .draft-btn {{
+    background: #3B5BDB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 1.5rem;
+    padding: 1.15rem 2.2rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 8px 24px rgba(59,91,219,0.3);
+    flex-shrink: 0;
+  }}
+  .draft-btn:hover {{
+    background: #2B4BC8;
+    box-shadow: 0 12px 32px rgba(59,91,219,0.4);
+  }}
+  .draft-btn svg {{
+    transition: transform 0.2s ease;
+  }}
+  .draft-btn:hover svg {{
+    transform: translateX(3px);
+  }}
+
+  /* ── Framing panel ── */
+  .framing-panel {{
+    display: {_framing_display};
+    gap: 2rem;
+    padding: 1.2rem 2rem 1.5rem 2rem;
+    border-top: 1px solid #F1F5F9;
+    background: rgba(248,250,252,0.5);
+    animation: slideDown 0.25s ease-out;
+  }}
+  @keyframes slideDown {{
+    from {{ opacity: 0; transform: translateY(-8px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+  }}
+  .framing-col {{
+    flex: 1;
+  }}
+  .framing-label {{
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #64748B;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }}
+  .framing-label-row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }}
+  .framing-input {{
+    width: 100%;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 0.75rem;
+    padding: 0.7rem 1rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: #0F172A;
+    outline: none;
+    transition: all 0.2s ease;
+  }}
+  .framing-input:focus {{
+    border-color: #93C5FD;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.08);
+  }}
+  .framing-input::placeholder {{
+    color: #94A3B8;
+  }}
+  .strength-counter {{
+    font-size: 10px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #3B82F6;
+    font-weight: 700;
+  }}
+  .framing-slider {{
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #E2E8F0;
+    border-radius: 3px;
+    outline: none;
+    margin: 0.4rem 0;
+  }}
+  .framing-slider::-webkit-slider-thumb {{
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #3B5BDB;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(59,91,219,0.3);
+  }}
+  .framing-slider::-moz-range-thumb {{
+    width: 18px;
+    height: 18px;
+    background: #3B5BDB;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }}
+  .strength-label {{
+    font-size: 11px;
+    color: #3B82F6;
+    font-style: italic;
+    font-weight: 500;
+    margin-top: 0.3rem;
+    min-height: 1em;
+  }}
+</style>
+
+<div class="pill">
+  <div class="pill-row">
+    <!-- Beaker icon (Lucide Beaker) -->
+    <div class="beaker-icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 3h15"/>
+        <path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/>
+        <path d="M6 14h12"/>
+      </svg>
+    </div>
+
+    <!-- Text input -->
+    <input class="pill-input" id="pillInput" type="text"
+      placeholder="Enter a testable statement..."
+      value="{_hyp_escaped}" />
+
+    <!-- Gear toggle (Lucide Settings2) -->
+    <button class="gear-btn" id="gearBtn" title="Framing Options">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7h-9"/><path d="M14 17H5"/>
+        <circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>
+      </svg>
+    </button>
+
+    <!-- Draft Paper button -->
+    <button class="draft-btn" id="draftBtn">
+      Draft Paper
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Framing panel -->
+  <div class="framing-panel" id="framingPanel">
+    <div class="framing-col">
+      <div class="framing-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+          <path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+          <path d="M7 21h10"/><path d="M12 3v18"/>
+        </svg>
+        Advocacy angle (optional)
+      </div>
+      <input class="framing-input" id="advAngleInput" type="text"
+        placeholder="e.g., Free-market perspective, climate urgency..."
+        value="{_angle_escaped}" />
+    </div>
+    <div class="framing-col">
+      <div class="framing-label-row">
+        <span class="framing-label" style="margin-bottom:0">Advocacy strength</span>
+        <span class="strength-counter" id="strengthCounter">{advocacy_temperature}/10</span>
+      </div>
+      <input class="framing-slider" id="advSlider" type="range"
+        min="1" max="10" step="1" value="{advocacy_temperature}" />
+      <div class="strength-label" id="strengthLabel">{_adv_label}</div>
+    </div>
+  </div>
+</div>
+
 <script>
-(function() {
-    const doc = window.parent.document;
+(function() {{
+  const parentDoc = window.parent.document;
+  const parentWin = window.parent;
 
-    function stylePill() {
-        // Find the gear button by its text content
-        const allBtnsPage = doc.querySelectorAll('button');
-        let gearBtn = null;
-        for (const b of allBtnsPage) {
-            if (b.textContent.trim() === '⚙') { gearBtn = b; break; }
-        }
-        if (!gearBtn) return;
-        
-        // Walk up to find the stVerticalBlockBorderWrapper
-        let pill = gearBtn;
-        for (let i = 0; i < 20; i++) {
-            pill = pill.parentElement;
-            if (!pill) return;
-            if (pill.dataset && pill.dataset.testid === 'stVerticalBlockBorderWrapper') break;
-        }
-        if (!pill || pill.dataset?.testid !== 'stVerticalBlockBorderWrapper') return;
-        if (pill.dataset.pillStyled) return;
-        pill.dataset.pillStyled = 'true';
+  // ── Helper: build URL with current pill state ──
+  function buildUrl(extraParams) {{
+    const url = new URL(parentWin.location.href);
+    // Always preserve hypothesis
+    url.searchParams.set('hyp', document.getElementById('pillInput').value);
+    // Preserve framing state
+    const isOpen = document.getElementById('framingPanel').style.display !== 'none';
+    url.searchParams.set('framing', isOpen ? '1' : '0');
+    // Preserve advocacy values if framing is open
+    if (isOpen) {{
+      url.searchParams.set('angle', document.getElementById('advAngleInput').value);
+      url.searchParams.set('temp', document.getElementById('advSlider').value);
+    }} else {{
+      url.searchParams.delete('angle');
+      url.searchParams.delete('temp');
+    }}
+    // Merge extra params
+    if (extraParams) {{
+      for (const [k, v] of Object.entries(extraParams)) {{
+        if (v === null) url.searchParams.delete(k);
+        else url.searchParams.set(k, v);
+      }}
+    }}
+    return url.toString();
+  }}
 
-        // Style the outer pill
-        Object.assign(pill.style, {
-            border: '2px solid #E2E8F0',
-            borderRadius: '2.5rem',
-            padding: '0.25rem 0.4rem',
-            boxShadow: '0 25px 60px -12px rgba(30,64,175,0.06)',
-            background: '#FFFFFF',
-            overflow: 'hidden'
-        });
+  // ── Draft Paper: set run=1 and navigate ──
+  document.getElementById('draftBtn').addEventListener('click', () => {{
+    const hyp = document.getElementById('pillInput').value.trim();
+    if (!hyp) {{
+      document.getElementById('pillInput').focus();
+      return;
+    }}
+    parentWin.location.href = buildUrl({{ run: '1' }});
+  }});
 
-        // Style the inner block to remove gaps
-        const innerBlocks = pill.querySelectorAll('[data-testid="stVerticalBlock"]');
-        innerBlocks.forEach(b => { b.style.gap = '0'; });
+  // ── Enter key in input also triggers draft ──
+  document.getElementById('pillInput').addEventListener('keydown', (e) => {{
+    if (e.key === 'Enter') {{
+      e.preventDefault();
+      document.getElementById('draftBtn').click();
+    }}
+  }});
 
-        // Style the horizontal block (columns row) for alignment
-        const hBlocks = pill.querySelectorAll('[data-testid="stHorizontalBlock"]');
-        hBlocks.forEach(b => { 
-            b.style.gap = '0.25rem'; 
-            b.style.alignItems = 'center'; 
-        });
+  // ── Gear toggle: flip framing param ──
+  document.getElementById('gearBtn').addEventListener('click', () => {{
+    const isOpen = '{str(show_framing).lower()}' === 'true';
+    parentWin.location.href = buildUrl({{ framing: isOpen ? '0' : '1' }});
+  }});
 
-        // Style the main text input — make it borderless
-        const mainInput = pill.querySelector('input[type="text"]');
-        if (mainInput) {
-            Object.assign(mainInput.style, {
-                background: 'transparent',
-                border: 'none',
-                boxShadow: 'none',
-                padding: '1rem 0.8rem',
-                fontSize: '1.1rem',
-                fontWeight: '300',
-                outline: 'none'
-            });
-            // Also kill the wrapper div's border
-            const inputWrapper = mainInput.closest('[data-baseweb="input"]') || mainInput.parentElement;
-            if (inputWrapper) {
-                inputWrapper.style.border = 'none';
-                inputWrapper.style.boxShadow = 'none';
-                inputWrapper.style.background = 'transparent';
-            }
-            // And the grandparent
-            const gp = mainInput.parentElement?.parentElement;
-            if (gp) {
-                gp.style.border = 'none';
-                gp.style.boxShadow = 'none';
-                gp.style.background = 'transparent';
-            }
-            // Focus handler
-            mainInput.addEventListener('focus', () => {
-                mainInput.style.boxShadow = 'none';
-                mainInput.style.border = 'none';
-                mainInput.style.outline = 'none';
-                if (mainInput.parentElement?.parentElement) {
-                    mainInput.parentElement.parentElement.style.boxShadow = 'none';
-                    mainInput.parentElement.parentElement.style.border = 'none';
-                }
-            });
-        }
+  // ── Slider: update label in real-time (no navigation needed) ──
+  const slider = document.getElementById('advSlider');
+  const counter = document.getElementById('strengthCounter');
+  const label = document.getElementById('strengthLabel');
+  slider.addEventListener('input', () => {{
+    const v = parseInt(slider.value);
+    counter.textContent = v + '/10';
+    if (v <= 3) label.textContent = 'Objective & Clinical';
+    else if (v <= 7) label.textContent = 'Moderate Emphasis';
+    else label.textContent = 'Subtle lean — data stays honest, narrative shifts';
+  }});
 
-        // Style the gear button — tiny, transparent, icon-only
-        const allBtns = pill.querySelectorAll('button');
-        allBtns.forEach(btn => {
-            const text = btn.textContent.trim();
-            if (text === '⚙' || text.includes('⚙')) {
-                Object.assign(btn.style, {
-                    background: 'transparent',
-                    border: 'none',
-                    boxShadow: 'none',
-                    color: '#94A3B8',
-                    padding: '0.4rem',
-                    minHeight: '40px',
-                    maxHeight: '40px',
-                    minWidth: '40px',
-                    maxWidth: '40px',
-                    borderRadius: '12px',
-                    fontSize: '1.2rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    margin: '0 auto'
-                });
-                btn.addEventListener('mouseenter', () => {
-                    btn.style.background = '#EFF6FF';
-                    btn.style.color = '#3B82F6';
-                });
-                btn.addEventListener('mouseleave', () => {
-                    btn.style.background = 'transparent';
-                    btn.style.color = '#94A3B8';
-                });
-            }
-            // Style the Draft Paper button
-            if (text.includes('Draft Paper')) {
-                Object.assign(btn.style, {
-                    borderRadius: '1.5rem',
-                    padding: '0.85rem 1.8rem',
-                    fontSize: '0.95rem',
-                    minHeight: '50px',
-                    whiteSpace: 'nowrap',
-                    background: '#3B5BDB',
-                    boxShadow: '0 8px 24px rgba(59,91,219,0.3)',
-                    border: 'none',
-                    fontWeight: '600',
-                    letterSpacing: '-0.01em'
-                });
-                btn.addEventListener('mouseenter', () => {
-                    btn.style.background = '#2B4BC8';
-                    btn.style.boxShadow = '0 12px 32px rgba(59,91,219,0.4)';
-                });
-                btn.addEventListener('mouseleave', () => {
-                    btn.style.background = '#3B5BDB';
-                    btn.style.boxShadow = '0 8px 24px rgba(59,91,219,0.3)';
-                });
-            }
-        });
-
-        // Hide all labels inside the pill
-        pill.querySelectorAll('label').forEach(l => { l.style.display = 'none'; });
-        
-        // Remove bottom margin from stTextInput wrappers
-        pill.querySelectorAll('[data-testid="stTextInput"]').forEach(el => { el.style.marginBottom = '0'; });
-    }
-
-    // Run immediately + observe for re-renders
-    setTimeout(stylePill, 200);
-    setTimeout(stylePill, 600);
-    setTimeout(stylePill, 1200);
-    const obs = new MutationObserver(() => { setTimeout(stylePill, 100); });
-    obs.observe(doc.body, { childList: true, subtree: true });
-    // Auto-disconnect after 10s to avoid perf issues
-    setTimeout(() => obs.disconnect(), 10000);
-})();
+}})();
 </script>
-""", height=0)
+"""
 
+_pill_height = 94 if not show_framing else 205
+components.html(_pill_html, height=_pill_height, scrolling=False)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGES + CONSOLE LABELS
