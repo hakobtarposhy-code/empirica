@@ -934,7 +934,7 @@ st.markdown("""
 st.markdown("""
 <div class="hero-section">
     <div style="text-align:center; margin-bottom:1.5rem;">
-        <span style="display:inline-block; font-family:'Inter',sans-serif; font-size:0.62rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#94A3B8; border:1px solid #E2E8F0; border-radius:20px; padding:0.4rem 1.2rem;">Powered by ProdifAI</span>
+        <span style="display:inline-block; font-family:'Inter',sans-serif; font-size:0.62rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#94A3B8; border:1px solid #E2E8F0; border-radius:20px; padding:0.4rem 1.2rem;">Powered by ProdAIos</span>
     </div>
     <h1 class="hero-h1">
         From Hypothesis to<br>Research Paper <span class="accent">in Seconds</span>
@@ -1278,4 +1278,4 @@ if not run_button or not hypothesis.strip():
 >Try Empirica Free ↑</a>
 </div>""", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""<div class="emp-footer"><div class="footer-logo"><svg viewBox="0 0 100 100" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/><path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/><path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/><circle cx="85" cy="58" r="4" fill="#0F172A"/></svg><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdifAI</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class="emp-footer"><div class="footer-logo"><svg viewBox="0 0 100 100" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 35 L50 20 L85 35 L50 50 Z" fill="#0F172A"/><path d="M38 45 V80" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/><path d="M38 62 H65" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M38 80 H72" stroke="#0F172A" stroke-width="8" stroke-linecap="round"/><path d="M85 35 V55" stroke="#0F172A" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 4"/><circle cx="85" cy="58" r="4" fill="#0F172A"/></svg><span class="footer-name">empirica</span></div><div class="footer-by">Powered by ProdAIos</div><div class="footer-copy">&copy; 2026. Academic research engine.</div></div>""", unsafe_allow_html=True)
