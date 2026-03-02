@@ -1003,7 +1003,6 @@ except ValueError:
 
 # Transfer to working variables
 hypothesis           = _hyp_from_url
-show_framing         = _framing_open
 advocacy_angle       = _angle_from_url if _framing_open else ""
 advocacy_temperature = _temp_from_url  if _framing_open else 1
 
@@ -1028,9 +1027,6 @@ if advocacy_angle.strip():
     else:
         _adv_label = "Subtle lean — data stays honest, narrative shifts"
 
-_gear_bg    = "#EFF6FF" if show_framing else "transparent"
-_gear_color = "#3B82F6" if show_framing else "#94A3B8"
-_framing_display = "flex" if show_framing else "none"
 _hyp_escaped = hypothesis.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 _angle_escaped = advocacy_angle.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
@@ -1088,8 +1084,8 @@ _pill_html = f"""
     height: 44px;
     border-radius: 1rem;
     border: none;
-    background: {_gear_bg};
-    color: {_gear_color};
+    background: transparent;
+    color: #94A3B8;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1099,6 +1095,10 @@ _pill_html = f"""
     margin-right: 0.5rem;
   }}
   .gear-btn:hover {{
+    background: #EFF6FF;
+    color: #3B82F6;
+  }}
+  .gear-btn.active {{
     background: #EFF6FF;
     color: #3B82F6;
   }}
@@ -1134,11 +1134,14 @@ _pill_html = f"""
 
   /* ── Framing panel ── */
   .framing-panel {{
-    display: {_framing_display};
+    display: none;
     gap: 2rem;
     padding: 1.2rem 2rem 1.5rem 2rem;
     border-top: 1px solid #F1F5F9;
     background: rgba(248,250,252,0.5);
+  }}
+  .framing-panel.open {{
+    display: flex;
     animation: slideDown 0.25s ease-out;
   }}
   @keyframes slideDown {{
@@ -1288,46 +1291,69 @@ _pill_html = f"""
 
 <script>
 (function() {{
-  const parentDoc = window.parent.document;
   const parentWin = window.parent;
+  const panel = document.getElementById('framingPanel');
+  const gearBtn = document.getElementById('gearBtn');
+  let framingOpen = false;
 
-  // ── Helper: build URL with current pill state ──
-  function buildUrl(extraParams) {{
+  // ── Resize iframe to fit content ──
+  function resize() {{
+    // Small delay to let DOM settle
+    requestAnimationFrame(() => {{
+      const h = document.querySelector('.pill').offsetHeight + 8;
+      // Streamlit components API
+      if (window.Streamlit) {{
+        window.Streamlit.setFrameHeight(h);
+      }}
+      // Fallback: direct iframe manipulation
+      if (window.frameElement) {{
+        window.frameElement.style.height = h + 'px';
+      }}
+    }});
+  }}
+
+  // ── Gear toggle — pure client-side, exactly like React's setShowFraming(!showFraming) ──
+  gearBtn.addEventListener('click', () => {{
+    framingOpen = !framingOpen;
+    if (framingOpen) {{
+      panel.classList.add('open');
+      gearBtn.classList.add('active');
+    }} else {{
+      panel.classList.remove('open');
+      gearBtn.classList.remove('active');
+    }}
+    setTimeout(resize, 50);
+    setTimeout(resize, 300);
+  }});
+
+  // ── Build URL with all pill state for Streamlit ──
+  function buildUrl() {{
     const url = new URL(parentWin.location.href);
-    // Always preserve hypothesis
     url.searchParams.set('hyp', document.getElementById('pillInput').value);
-    // Preserve framing state
-    const isOpen = document.getElementById('framingPanel').style.display !== 'none';
-    url.searchParams.set('framing', isOpen ? '1' : '0');
-    // Preserve advocacy values if framing is open
-    if (isOpen) {{
+    url.searchParams.set('run', '1');
+    if (framingOpen) {{
+      url.searchParams.set('framing', '1');
       url.searchParams.set('angle', document.getElementById('advAngleInput').value);
       url.searchParams.set('temp', document.getElementById('advSlider').value);
     }} else {{
+      url.searchParams.delete('framing');
       url.searchParams.delete('angle');
       url.searchParams.delete('temp');
-    }}
-    // Merge extra params
-    if (extraParams) {{
-      for (const [k, v] of Object.entries(extraParams)) {{
-        if (v === null) url.searchParams.delete(k);
-        else url.searchParams.set(k, v);
-      }}
     }}
     return url.toString();
   }}
 
-  // ── Draft Paper: set run=1 and navigate ──
+  // ── Draft Paper → send everything to Streamlit via URL ──
   document.getElementById('draftBtn').addEventListener('click', () => {{
     const hyp = document.getElementById('pillInput').value.trim();
     if (!hyp) {{
       document.getElementById('pillInput').focus();
       return;
     }}
-    parentWin.location.href = buildUrl({{ run: '1' }});
+    parentWin.location.href = buildUrl();
   }});
 
-  // ── Enter key in input also triggers draft ──
+  // ── Enter key also triggers Draft ──
   document.getElementById('pillInput').addEventListener('keydown', (e) => {{
     if (e.key === 'Enter') {{
       e.preventDefault();
@@ -1335,13 +1361,7 @@ _pill_html = f"""
     }}
   }});
 
-  // ── Gear toggle: flip framing param ──
-  document.getElementById('gearBtn').addEventListener('click', () => {{
-    const isOpen = '{str(show_framing).lower()}' === 'true';
-    parentWin.location.href = buildUrl({{ framing: isOpen ? '0' : '1' }});
-  }});
-
-  // ── Slider: update label in real-time (no navigation needed) ──
+  // ── Slider: update label in real-time ──
   const slider = document.getElementById('advSlider');
   const counter = document.getElementById('strengthCounter');
   const label = document.getElementById('strengthLabel');
@@ -1353,11 +1373,16 @@ _pill_html = f"""
     else label.textContent = 'Subtle lean — data stays honest, narrative shifts';
   }});
 
+  // ── Initial resize + retries ──
+  resize();
+  setTimeout(resize, 100);
+  setTimeout(resize, 300);
+  setTimeout(resize, 600);
 }})();
 </script>
 """
 
-_pill_height = 94 if not show_framing else 205
+_pill_height = 220
 components.html(_pill_html, height=_pill_height, scrolling=False)
 
 # ═══════════════════════════════════════════════════════════════════════════════
