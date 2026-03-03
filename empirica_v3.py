@@ -1,6 +1,6 @@
 # ============================================================================
 # EMPIRICA v1.6.0 — Complete Research Pipeline
-# ============================================================================
+# ===========================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
 #         academic paper formatting (margins, spacing, page numbers, title page)
