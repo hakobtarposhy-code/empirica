@@ -1375,13 +1375,21 @@ N={desc.get('n_obs','N/A')} observations, {desc.get('n_countries','N/A')} countr
 Interpretation: {self.interp.get('main_finding','N/A')}
 Tone: {self.interp.get('recommended_tone','cautious')}
 
-Write the abstract as exactly 4 sentences. No hooks, no rhetorical devices, no storytelling. Plain academic reporting.
-SENTENCE 1: State the key finding directly. "Higher X is NOT associated with higher Y in a panel of N countries." Open with the result, not the question. Bold and declarative.
-SENTENCE 2: Describe the data and method (panel of N countries, M years, OLS with controls and country fixed effects).
-SENTENCE 3: State the key finding with BOTH the controlled OLS and fixed-effects coefficients, translated into plain units.
-SENTENCE 4: State the main limitation (identification) and one implication.
+Write the abstract following PubMed structured abstract format. Use these four labeled sections:
 
-Do NOT open with "Conventional wisdom holds..." or any framing device. Open with what the paper does.""",
+OBJECTIVE: (1-2 sentences) State what this study examines and why. "This study examines whether X is associated with Y, a relationship that underpins [specific policy assumption]." State the gap or contested question.
+
+METHODS: (2-3 sentences) State the data source, sample scope (N countries, M years, K observations), and the identification strategy. Name the estimators: pooled OLS with controls and country fixed effects. State what the fixed effects absorb.
+
+RESULTS: (2-3 sentences) State the key coefficients from BOTH specifications with p-values, translated into plain units. State what happens to the coefficient across specifications (bivariate to controlled to fixed effects). State the within R-squared.
+
+CONCLUSIONS: (1-2 sentences) State the main implication and the primary limitation. Use cautious language: "These results suggest..." or "The evidence does not support..."
+
+RULES:
+- Use the four headers: OBJECTIVE, METHODS, RESULTS, CONCLUSIONS
+- No hooks, no rhetorical devices, no framing. Plain academic reporting.
+- Every sentence in RESULTS must contain a number.
+- Do NOT open with "Conventional wisdom holds..." or any scene-setting.""",
             ),
             "introduction": (
                 f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an introduction in IMF Working Paper style (500-700 words). {WRITING_RULES}{adv}\n{self.cites}",
