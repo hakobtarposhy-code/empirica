@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v1.7.0 — Complete Research Pipeline
+# EMPIRICA v1.8.0 — Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
@@ -10,7 +10,7 @@
 # v1.5.0: Academic writing discipline overhaul — paragraph architecture, section
 #          split (methodology/results/discussion), cartographic lit review,
 #          anti-editorializing rules, causality language enforcement
-# v1.7.0: Orwell + McCloskey + academic populist rewrite — dead metaphor ban,
+# v1.6.0: Orwell + McCloskey + academic populist rewrite — dead metaphor ban,
 #          cut filler words, short words over long, active voice, stress-at-end,
 #          no throat-clearing, coefficient translation for non-specialists,
 #          top-papers intro pattern (consensus→disruption→this paper→preview)
@@ -1330,7 +1330,14 @@ class PaperWriter:
                 continue
             sys_p, usr_p = prompts[name]
             print(f"  📝 Writing: {name}...")
-            raw = ask_claude(sys_p, usr_p, 3000)       # no extended thinking for writing
+            # Per-section temperature: lower = precise, higher = confident/creative
+            section_temps = {
+                "abstract": 0.2, "introduction": 0.5, "literature_review": 0.3,
+                "methodology": 0.1, "results": 0.1, "discussion": 0.4,
+                "conclusion": 0.2, "policy_implications": 0.5,
+            }
+            temp = section_temps.get(name, 0.3)
+            raw = ask_claude(sys_p, usr_p, 3000, temperature=temp)  # per-section temperature
             text = strip_markdown(raw)
             text = self._verify_citations(text)
             text = strip_duplicate_heading(text, name.replace("_", " "))
@@ -1369,7 +1376,7 @@ Interpretation: {self.interp.get('main_finding','N/A')}
 Tone: {self.interp.get('recommended_tone','cautious')}
 
 Write the abstract as exactly 4 sentences. No hooks, no rhetorical devices, no storytelling. Plain academic reporting.
-SENTENCE 1: State the research question directly. "We examine whether X is associated with Y using..."
+SENTENCE 1: State the key finding directly. "Higher X is NOT associated with higher Y in a panel of N countries." Open with the result, not the question. Bold and declarative.
 SENTENCE 2: Describe the data and method (panel of N countries, M years, OLS with controls and country fixed effects).
 SENTENCE 3: State the key finding with BOTH the controlled OLS and fixed-effects coefficients, translated into plain units.
 SENTENCE 4: State the main limitation (identification) and one implication.
@@ -1377,28 +1384,42 @@ SENTENCE 4: State the main limitation (identification) and one implication.
 Do NOT open with "Conventional wisdom holds..." or any framing device. Open with what the paper does.""",
             ),
             "introduction": (
-                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an introduction (400-500 words). {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an introduction in IMF Working Paper style (500-700 words). {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Main finding: {self.interp.get('main_finding','N/A')}
 Tone: {self.interp.get('recommended_tone','cautious')}
 Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 
-Write exactly 4 paragraphs. Each paragraph does ONE job. Write in the register of a published empirical paper. No storytelling, no anecdotes, no country examples in the opening. Start with the academic context, not with a hook.
+Write NUMBERED paragraphs (1., 2., 3., etc.) in IMF Working Paper style.
 
-PARAGRAPH 1 — THE POLICY PROBLEM (3-4 sentences):
-Open with the real-world policy context that makes this question matter. What do governments or international organizations currently assume about the X-Y relationship? What specific policy decisions (budget targets, lending conditions, reform benchmarks) rest on that assumption? Then state the research question. Start with the PROBLEM, not the literature. Do NOT use country anecdotes or vivid facts as hooks.
+IMF INTRODUCTION RULES:
+- Opening sentence of each paragraph is the TAKEAWAY: bold, declarative, no hedging
+- Every claim is immediately followed by its number or evidence
+- Pattern: Claim then number then context then however/despite then number
+- No sentence floats without data, a citation, or a figure reference
 
-PARAGRAPH 2 — WHAT WE KNOW AND WHERE IT FALLS SHORT (3-4 sentences):
-State what the existing cross-country evidence broadly finds. Then state the methodological limitation: most studies rely on between-country comparisons that cannot separate the effect of X from permanent country traits (institutional quality, geography, colonial history). Cite 2-3 studies from the verified list. End by stating what remains unresolved.
+1. KEY FINDING (2-3 sentences):
+Open with the key finding as a bold declarative claim. Attach the number immediately. Pattern: "Higher education spending as a share of GDP is not associated with faster economic growth. In a panel of N countries over YEARS, the within-country coefficient is B (p < VALUE), and the association grows more negative after controlling for country fixed effects." Do NOT hedge.
 
-PARAGRAPH 3 — OUR APPROACH (3-4 sentences):
-Describe the data ({desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}) and the identification strategy (OLS with controls and country fixed effects). State what the fixed-effects estimator buys relative to cross-sectional comparisons.
+2. POLICY CONTEXT (3-4 sentences):
+State the policy stakes with numbers. How much do governments spend on education globally (cite ranges or averages)? What targets do international organizations recommend? Then the "despite" or "however": despite these commitments, the cross-country evidence on whether spending translates to growth remains contested. Cite 2-3 studies from the verified list with their specific findings and sample sizes.
 
-PARAGRAPH 4 — PREVIEW OF FINDINGS (2-3 sentences):
-State the main result. Give the coefficient and translate it into plain language. State whether the result supports or qualifies the hypothesis.
+3. DATA AND METHOD (3-4 sentences):
+State specifics: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}, World Bank World Development Indicators. State the identification strategy: pooled OLS with five controls, then country fixed effects that compare each country only to itself over time. State what the fixed-effects estimator strips out: geography, colonial history, institutional quality, and all other permanent country characteristics.
 
-Do NOT include a roadmap paragraph. Do NOT open with an anecdote or a "striking fact." Do NOT use phrases like "cases like these sit uneasily beside" or "the answer carries real fiscal weight." Write like a researcher reporting findings, not like a journalist telling a story.""",
+4. RESULT PROGRESSION (2-3 sentences):
+State the coefficient progression with specific numbers: from bivariate OLS to controlled OLS to fixed effects. State what happens at each step: the coefficient grows MORE negative, suggesting permanent country characteristics were masking, not driving, the association.
+
+5. ROADMAP (1 sentence):
+"Section 2 reviews the cross-country evidence. Section 3 describes data and methods. Section 4 presents results. Section 5 discusses identification threats. Section 6 concludes."
+
+IMF RULES:
+- Every paragraph opens with a bold declarative takeaway
+- Attach a number to every claim
+- Use "however," "despite," "yet" to introduce qualifications
+- Do NOT hedge the opening sentence of any paragraph
+- Numbered paragraphs (1., 2., 3., etc.)""",
             ),
             "literature_review": (
                 f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY a literature review (500-700 words). {WRITING_RULES}{adv}\n{self.cites}\n\nYou have {len(self.literature)} verified papers. Cite at least 10-12 of them.",
@@ -1443,7 +1464,7 @@ Present the baseline controlled model:
 [EQ]Y_{{it}} = α + β × X_{{it}} + γ Controls_{{it}} + ε_{{it}}[/EQ]
 Then present the fixed-effects specification:
 [EQ]Y_{{it}} = β × X_{{it}} + μ_{{i}} + ε_{{it}}[/EQ]
-Explain what μ_{{i}} absorbs (all time-invariant country characteristics: geography, colonial history, language, legal origin). Then JUSTIFY the choice of fixed effects in 2 sentences: the pooled OLS estimate conflates within-country and between-country variation; the fixed-effects estimator isolates within-country changes over time, answering a sharper question: when a given country changes its X, how much does its Y change? Note that standard errors are clustered by country to account for serial correlation within panels.
+Explain in one sentence what μ_{{i}} absorbs (all time-invariant country characteristics). State that the fixed-effects coefficient answers a sharper question: within-country variation over time.
 
 PARAGRAPH 3 — SAMPLE CONSTRUCTION (2-3 sentences):
 Note any data cleaning (winsorization, minimum observations per country, exclusion of zeros). State the final estimation sample size.
@@ -1463,14 +1484,14 @@ Write exactly 3-4 paragraphs. This section ONLY presents findings. No interpreta
 PARAGRAPH 1 — HEADLINE RESULT (3-4 sentences):
 Open with "Table 2 reports the main estimation results." Then state the OLS+controls coefficient, its standard error, p-value, and R-squared. Translate the coefficient into plain units in one sentence (e.g., "each percentage-point increase in X is associated with Y additional units of Z"). State the sample size.
 
-PARAGRAPH 2 — FIXED EFFECTS (4-5 sentences):
-State the fixed-effects coefficient, standard error, p-value, within R-squared, and sample size. Compare it to the controlled OLS: is it larger, smaller, or reversed? State the magnitude of the change in the same plain units used above. Then state what the within R-squared tells us: how much of the year-to-year variation in Y within a given country is explained by changes in X. This paragraph should make clear what the within-country estimator revealed that cross-country comparison could not.
+PARAGRAPH 2 — FIXED EFFECTS (3-4 sentences):
+State the fixed-effects coefficient, standard error, p-value, and within R-squared. Compare it to the controlled OLS estimate: is it larger, smaller, or similar? State factually what the difference implies about the role of time-invariant confounders versus within-country dynamics.
 
 PARAGRAPH 3 — ROBUSTNESS (2-3 sentences):
 Report the Pearson and Spearman correlations as supporting descriptive evidence. Note the bivariate OLS coefficient briefly as a benchmark. State whether the sign and significance are consistent across all specifications.
 
-PARAGRAPH 4 — SPECIFICATION PROGRESSION (2-3 sentences):
-Walk the reader through the progression: bivariate → controlled → fixed effects. State what happens to the coefficient at each step and what that shift reveals about the role of observable controls versus permanent country characteristics. State which control variable absorbs the largest share of variation when added.
+PARAGRAPH 4 (optional) — SPECIFICATION COMPARISON (2-3 sentences):
+If the controlled OLS coefficient differs substantially from the fixed-effects estimate, state the difference quantitatively. Note which controls absorb the most variation when added to the model.
 
 CRITICAL RULES:
 - Open with a table reference, not a narrative hook.
@@ -1488,19 +1509,16 @@ Interpretation: {json.dumps(self.interp, indent=2, default=str)}
 OLS+controls: B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}, R2={main_result.get('r_squared','N/A')}
 Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}, R2w={fe_result.get('r_squared_within','N/A')}
 
-Write exactly 4 paragraphs. This is where interpretation belongs:
+Write exactly 3 paragraphs. This is where interpretation belongs:
 
 PARAGRAPH 1 — WHAT THE RESULTS MEAN (3-4 sentences):
 Interpret the main finding in context. How does the coefficient compare to findings in the literature? Is the effect large or small relative to other studies? What does the difference between the OLS and fixed-effects estimates tell us about the underlying mechanism? Cite 2-3 papers from the verified list for comparison.
 
-PARAGRAPH 2 — IDENTIFICATION THREATS (4-5 sentences):
-Name the two or three specific threats to causal identification. For EACH threat: (a) name it concretely (e.g., "reverse causality: governments may increase education spending as a share of GDP precisely when growth stalls"), (b) state the likely direction of bias (upward or downward), and (c) state what method would be needed to address it (an instrument, a natural experiment, lagged specifications). Do NOT write "endogeneity is a concern" and stop. Be as specific as the data allow.
+PARAGRAPH 2 — IDENTIFICATION CONCERNS (3-4 sentences):
+State the specific threats to causal identification. Do not write "endogeneity is a concern" in the abstract. Instead, name the specific confounders or reverse causality channels that could bias the estimate. For each threat, state its likely direction of bias (upward or downward). Be concrete.
 
-PARAGRAPH 3 — WHAT THE DATA CANNOT ANSWER (3-4 sentences):
-State explicitly what the dataset and method are unable to capture. The data are at the country-year level and cannot capture within-country distribution of X across regions or groups. The contemporaneous specification cannot detect effects that take years to materialize. The control variables do not include institutional quality, governance, or time-varying policy changes. This paragraph makes the reader understand the BOUNDARIES of the evidence.
-
-PARAGRAPH 4 — SPECIFICATION GAP (2-3 sentences):
-Discuss the gap between controlled OLS and fixed-effects estimates. State what permanent country characteristics absorb when fixed effects are added. If the within R-squared is very low, state what that implies: changes in X explain very little of year-to-year variation in Y within countries.
+PARAGRAPH 3 — WHAT THE CONTROLS REVEAL (2-3 sentences):
+Discuss what happens when controls are added. If the coefficient shrinks, which control absorbs the most variation, and what does that imply about the channels through which X operates? If the coefficient grows under fixed effects, what does that imply about cross-country heterogeneity?
 
 Do NOT include policy recommendations. Do NOT repeat the coefficient values unless comparing them to other studies.""",
             ),
@@ -1520,7 +1538,7 @@ PARAGRAPH 2 (2-3 sentences): State one specific direction for future research. N
 Do NOT restate the introduction. Do NOT recap the methodology. Do NOT discuss policy. Do NOT re-argue the paper. Do NOT use literary devices ("the hypothesis holds in direction; it stumbles in magnitude"). Just state what was found, what the limitation is, and what comes next.""",
             ),
             "policy_implications": (
-                f"You are writing policy implications for an economics journal. {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are writing the policy implications section of an IMF Working Paper. Style: bold recommendation first as a declarative headline, then detailed explanation grounded in the paper's findings. Do not mechanically repeat coefficients; translate results into actionable guidance for policymakers. {WRITING_RULES}{adv}\n{self.cites}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}, Y: {self.plan['y_label']}
 Interpretation: {json.dumps(self.interp, indent=2, default=str)}
@@ -1532,19 +1550,21 @@ IDENTIFICATION CONTEXT: This paper uses OLS with controls and country fixed effe
 
 Write EXACTLY 3 policy paragraphs. Each paragraph does one job:
 
-STRICT FORMAT for each paragraph:
-- First sentence: a short, direct recommendation (max 15 words). Mark it with RECOMMENDATION: at the start.
-- Second sentence: connect the recommendation to a SPECIFIC coefficient or finding. Use conditional language: "If the association reflects a causal relationship, then..."
-- Third sentence: name a concrete real-world example (a specific country, program, or institution).
-- Fourth sentence: state the key caveat in one sentence.
+IMF POLICY STYLE: bold idea first, then explain in detail.
+
+STRUCTURE for each paragraph:
+- FIRST SENTENCE: A bold, declarative policy recommendation. Mark with RECOMMENDATION: at the start. This is the headline a finance minister reads. Confident, specific, max 15 words. Example: "RECOMMENDATION: Governments should track education spending per pupil, not GDP shares."
+- NEXT 3-5 SENTENCES: Explain IN DETAIL. Do NOT mechanically repeat coefficients from Table 2. Instead, translate what the pattern of results means for policy design. Discuss WHY current approaches may fail based on what the evidence reveals. Reference the direction and consistency across specifications rather than exact numbers. Ground the argument in institutional context.
+- FINAL SENTENCE: The qualification. "This recommendation rests on the assumption that..." or "The strength of this guidance depends on..."
 
 RULES:
-- ALL recommendations must use conditional language because identification is correlational.
-- Never write "the data show that governments should..." Write "If the relationship is causal, governments could consider..."
-- Each paragraph covers a DIFFERENT policy dimension (no overlap).
-- Only recommend actions related to variables ACTUALLY MEASURED in the analysis. Do not recommend investments in unmeasured channels.
-- No generic advice like "more research is needed."
-- Each recommendation should feel actionable by a specific institution.""",
+- Opening sentence of each paragraph is the TAKEAWAY: bold, no hedging
+- Do NOT repeat the paper's exact numbers. The reader has seen Table 2. Interpret, don't recite.
+- Each paragraph covers a DIFFERENT policy dimension (no overlap)
+- Ground recommendations in MEASURED variables only
+- Think like an IMF staff economist briefing a minister: what would you tell them to DO?
+- No generic advice like "more research is needed"
+- Use "should" for the recommendation, but qualify the evidence base in the explanation""",
             ),
         }
 
@@ -2267,7 +2287,7 @@ print("Done.")
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                  advocacy_angle: str = "", advocacy_temperature: int = 1):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.7.0")
+    print("  EMPIRICA v1.8.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     if advocacy_angle:
@@ -2386,7 +2406,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v1.7.0 COMPLETE")
+    print("  ✅ EMPIRICA v1.8.0 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
