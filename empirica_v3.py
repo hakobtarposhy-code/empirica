@@ -1,6 +1,6 @@
 # ============================================================================
-# EMPIRICA v1.6.0 — Complete Research Pipeline
-# ===========================================================================
+# EMPIRICA v1.7.0 — Complete Research Pipeline
+# ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
 #         academic paper formatting (margins, spacing, page numbers, title page)
@@ -10,7 +10,7 @@
 # v1.5.0: Academic writing discipline overhaul — paragraph architecture, section
 #          split (methodology/results/discussion), cartographic lit review,
 #          anti-editorializing rules, causality language enforcement
-# v1.6.0: Orwell + McCloskey + academic populist rewrite — dead metaphor ban,
+# v1.7.0: Orwell + McCloskey + academic populist rewrite — dead metaphor ban,
 #          cut filler words, short words over long, active voice, stress-at-end,
 #          no throat-clearing, coefficient translation for non-specialists,
 #          top-papers intro pattern (consensus→disruption→this paper→preview)
@@ -1386,11 +1386,11 @@ Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 
 Write exactly 4 paragraphs. Each paragraph does ONE job. Write in the register of a published empirical paper. No storytelling, no anecdotes, no country examples in the opening. Start with the academic context, not with a hook.
 
-PARAGRAPH 1 — THE QUESTION (3-4 sentences):
-Open by stating what the existing literature broadly finds about the X-Y relationship. Then state what remains unresolved or contested. End with the specific research question this paper addresses. Do NOT open with a country anecdote, a vivid fact, or a rhetorical device. Open with the academic context.
+PARAGRAPH 1 — THE POLICY PROBLEM (3-4 sentences):
+Open with the real-world policy context that makes this question matter. What do governments or international organizations currently assume about the X-Y relationship? What specific policy decisions (budget targets, lending conditions, reform benchmarks) rest on that assumption? Then state the research question. Start with the PROBLEM, not the literature. Do NOT use country anecdotes or vivid facts as hooks.
 
-PARAGRAPH 2 — WHY IT MATTERS (3-4 sentences):
-State why resolving this question matters for economic policy or for the literature. Be specific but measured. Do not dramatize. One sentence on what gets misallocated if the relationship is misunderstood.
+PARAGRAPH 2 — WHAT WE KNOW AND WHERE IT FALLS SHORT (3-4 sentences):
+State what the existing cross-country evidence broadly finds. Then state the methodological limitation: most studies rely on between-country comparisons that cannot separate the effect of X from permanent country traits (institutional quality, geography, colonial history). Cite 2-3 studies from the verified list. End by stating what remains unresolved.
 
 PARAGRAPH 3 — OUR APPROACH (3-4 sentences):
 Describe the data ({desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}) and the identification strategy (OLS with controls and country fixed effects). State what the fixed-effects estimator buys relative to cross-sectional comparisons.
@@ -1443,7 +1443,7 @@ Present the baseline controlled model:
 [EQ]Y_{{it}} = α + β × X_{{it}} + γ Controls_{{it}} + ε_{{it}}[/EQ]
 Then present the fixed-effects specification:
 [EQ]Y_{{it}} = β × X_{{it}} + μ_{{i}} + ε_{{it}}[/EQ]
-Explain in one sentence what μ_{{i}} absorbs (all time-invariant country characteristics). State that the fixed-effects coefficient answers a sharper question: within-country variation over time.
+Explain what μ_{{i}} absorbs (all time-invariant country characteristics: geography, colonial history, language, legal origin). Then JUSTIFY the choice of fixed effects in 2 sentences: the pooled OLS estimate conflates within-country and between-country variation; the fixed-effects estimator isolates within-country changes over time, answering a sharper question: when a given country changes its X, how much does its Y change? Note that standard errors are clustered by country to account for serial correlation within panels.
 
 PARAGRAPH 3 — SAMPLE CONSTRUCTION (2-3 sentences):
 Note any data cleaning (winsorization, minimum observations per country, exclusion of zeros). State the final estimation sample size.
@@ -1463,14 +1463,14 @@ Write exactly 3-4 paragraphs. This section ONLY presents findings. No interpreta
 PARAGRAPH 1 — HEADLINE RESULT (3-4 sentences):
 Open with "Table 2 reports the main estimation results." Then state the OLS+controls coefficient, its standard error, p-value, and R-squared. Translate the coefficient into plain units in one sentence (e.g., "each percentage-point increase in X is associated with Y additional units of Z"). State the sample size.
 
-PARAGRAPH 2 — FIXED EFFECTS (3-4 sentences):
-State the fixed-effects coefficient, standard error, p-value, and within R-squared. Compare it to the controlled OLS estimate: is it larger, smaller, or similar? State factually what the difference implies about the role of time-invariant confounders versus within-country dynamics.
+PARAGRAPH 2 — FIXED EFFECTS (4-5 sentences):
+State the fixed-effects coefficient, standard error, p-value, within R-squared, and sample size. Compare it to the controlled OLS: is it larger, smaller, or reversed? State the magnitude of the change in the same plain units used above. Then state what the within R-squared tells us: how much of the year-to-year variation in Y within a given country is explained by changes in X. This paragraph should make clear what the within-country estimator revealed that cross-country comparison could not.
 
 PARAGRAPH 3 — ROBUSTNESS (2-3 sentences):
 Report the Pearson and Spearman correlations as supporting descriptive evidence. Note the bivariate OLS coefficient briefly as a benchmark. State whether the sign and significance are consistent across all specifications.
 
-PARAGRAPH 4 (optional) — SPECIFICATION COMPARISON (2-3 sentences):
-If the controlled OLS coefficient differs substantially from the fixed-effects estimate, state the difference quantitatively. Note which controls absorb the most variation when added to the model.
+PARAGRAPH 4 — SPECIFICATION PROGRESSION (2-3 sentences):
+Walk the reader through the progression: bivariate → controlled → fixed effects. State what happens to the coefficient at each step and what that shift reveals about the role of observable controls versus permanent country characteristics. State which control variable absorbs the largest share of variation when added.
 
 CRITICAL RULES:
 - Open with a table reference, not a narrative hook.
@@ -1488,16 +1488,19 @@ Interpretation: {json.dumps(self.interp, indent=2, default=str)}
 OLS+controls: B={main_result.get('coefficient','N/A')}, p={main_result.get('p_value','N/A')}, R2={main_result.get('r_squared','N/A')}
 Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value','N/A')}, R2w={fe_result.get('r_squared_within','N/A')}
 
-Write exactly 3 paragraphs. This is where interpretation belongs:
+Write exactly 4 paragraphs. This is where interpretation belongs:
 
 PARAGRAPH 1 — WHAT THE RESULTS MEAN (3-4 sentences):
 Interpret the main finding in context. How does the coefficient compare to findings in the literature? Is the effect large or small relative to other studies? What does the difference between the OLS and fixed-effects estimates tell us about the underlying mechanism? Cite 2-3 papers from the verified list for comparison.
 
-PARAGRAPH 2 — IDENTIFICATION CONCERNS (3-4 sentences):
-State the specific threats to causal identification. Do not write "endogeneity is a concern" in the abstract. Instead, name the specific confounders or reverse causality channels that could bias the estimate. For each threat, state its likely direction of bias (upward or downward). Be concrete.
+PARAGRAPH 2 — IDENTIFICATION THREATS (4-5 sentences):
+Name the two or three specific threats to causal identification. For EACH threat: (a) name it concretely (e.g., "reverse causality: governments may increase education spending as a share of GDP precisely when growth stalls"), (b) state the likely direction of bias (upward or downward), and (c) state what method would be needed to address it (an instrument, a natural experiment, lagged specifications). Do NOT write "endogeneity is a concern" and stop. Be as specific as the data allow.
 
-PARAGRAPH 3 — WHAT THE CONTROLS REVEAL (2-3 sentences):
-Discuss what happens when controls are added. If the coefficient shrinks, which control absorbs the most variation, and what does that imply about the channels through which X operates? If the coefficient grows under fixed effects, what does that imply about cross-country heterogeneity?
+PARAGRAPH 3 — WHAT THE DATA CANNOT ANSWER (3-4 sentences):
+State explicitly what the dataset and method are unable to capture. The data are at the country-year level and cannot capture within-country distribution of X across regions or groups. The contemporaneous specification cannot detect effects that take years to materialize. The control variables do not include institutional quality, governance, or time-varying policy changes. This paragraph makes the reader understand the BOUNDARIES of the evidence.
+
+PARAGRAPH 4 — SPECIFICATION GAP (2-3 sentences):
+Discuss the gap between controlled OLS and fixed-effects estimates. State what permanent country characteristics absorb when fixed effects are added. If the within R-squared is very low, state what that implies: changes in X explain very little of year-to-year variation in Y within countries.
 
 Do NOT include policy recommendations. Do NOT repeat the coefficient values unless comparing them to other studies.""",
             ),
@@ -2264,7 +2267,7 @@ print("Done.")
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                  advocacy_angle: str = "", advocacy_temperature: int = 1):
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.6.0")
+    print("  EMPIRICA v1.7.0")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     if advocacy_angle:
@@ -2383,7 +2386,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
     print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v1.6.0 COMPLETE")
+    print("  ✅ EMPIRICA v1.7.0 COMPLETE")
     print("=" * 60)
     print(f"  Paper:  {paper_path}")
     print(f"  Code:   {repro_path}")
