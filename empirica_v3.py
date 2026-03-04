@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v1.9.0 — Complete Research Pipeline
+# EMPIRICA v2.0.0 - Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
@@ -21,6 +21,12 @@
 #          PubMed structured abstract, finding-first lit review citations
 # v1.9.0: Anti-AI cadence overhaul — few-shot voice examples from Hanushek &
 #          Woessmann (2021) embedded in prompts, sentence-length variance rules,
+# v2.0.0: IMF style consolidation - writing rules simplified to Orwell + IMF only,
+#          few-shots from Shibata (2025 IMF) and Hanushek/Woessmann (2021),
+#          abstract citations banned, descriptive stats table fixed (min/max + controls),
+#          banned words list (drive/drives/driven etc), banned punctuation (em dash,
+#          semicolons, colons for drama), hyphens only, indicator codes banned from prose,
+#          proofreader overhauled with punctuation enforcement.
 #          rough transition instructions, author-subordination enforcement,
 #          proofreader AI-cadence detection (monotone rhythm, smooth transitions,
 #          hedge stacking, evaluative filler), parenthetical aside encouragement
@@ -452,7 +458,7 @@ Return JSON: {"code": "XX.XXX.XXX", "name": "description", "reasoning": "why thi
 
 
 # ============================================================================
-# AGENT 1: HYPOTHESIS PARSER (AI — extended thinking)
+# AGENT 1: HYPOTHESIS PARSER (AI - extended thinking)
 # ============================================================================
 def ai_parse_hypothesis(hypothesis_text: str) -> dict:
     print("\n🧠 AGENT 1: Parsing hypothesis with AI (extended thinking)...")
@@ -464,7 +470,7 @@ Given a hypothesis, decide the BEST data source and pick indicator codes.
 
 DATA SOURCE SELECTION:
 - Use "worldbank" for: global/developing country topics, health, education, poverty, environment, infrastructure, demographics
-- Use "ameco" for: EU/euro area macro-fiscal topics — fiscal policy, output gaps, structural deficits, unit labour costs, government debt, inflation (HICP), unemployment, current account, potential GDP, cyclical adjustment
+- Use "ameco" for: EU/euro area macro-fiscal topics, fiscal policy, output gaps, structural deficits, unit labour costs, government debt, inflation (HICP), unemployment, current account, potential GDP, cyclical adjustment
 - Use "both" only if the hypothesis explicitly compares EU vs global data (rare)
 
 AMECO DATASET CODES (via DBnomics, provider="AMECO"):
@@ -489,7 +495,7 @@ AMECO DATASET CODES (via DBnomics, provider="AMECO"):
 AMECO dimensions: use {"geo": ["ea20"]} for euro area aggregate, or omit for all countries.
 AMECO years: typically 1960-2025 (includes Commission forecasts).
 
-WORLD BANK INDICATOR CODES (you know thousands — use any valid one):
+WORLD BANK INDICATOR CODES (you know thousands, use any valid one):
 WELL-POPULATED indicators (prefer these when possible):
 GDP: NY.GDP.PCAP.PP.KD, NY.GDP.MKTP.KD.ZG, NY.GDP.PCAP.KD.ZG
 Trade: NE.EXP.GNFS.ZS, NE.IMP.GNFS.ZS, TG.VAL.TOTL.GD.ZS
@@ -501,11 +507,11 @@ Demographics: SP.URB.TOTL.IN.ZS, SP.POP.GROW, SP.DYN.TFRT.IN
 Labor: SL.UEM.TOTL.ZS, SL.TLF.CACT.ZS, SL.AGR.EMPL.ZS
 Governance: GE.EST, CC.EST, RL.EST, VA.EST
 Environment: EN.ATM.CO2E.PC, EG.USE.ELEC.KH.PC, AG.LND.FRST.ZS
-Poverty: SI.POV.DDAY (note: SI.POV.GINI has VERY sparse data — avoid it)
+Poverty: SI.POV.DDAY (note: SI.POV.GINI has VERY sparse data, avoid it)
 Water/Sanitation: SH.H2O.SMDW.ZS, SH.STA.SMSS.ZS
 
 CRITICAL RULES:
-1. X and Y MUST be from DIFFERENT domains — never two GDP indicators, two health indicators, etc.
+1. X and Y MUST be from DIFFERENT domains, never two GDP indicators, two health indicators, etc.
 2. The relationship must be CAUSAL/INTERESTING, not an accounting identity
 3. PREFER indicators with GOOD data coverage — most countries, most years
 4. Pick 2-4 control variables that are CONFOUNDERS (from the SAME source as X/Y)
@@ -929,7 +935,7 @@ class LiteratureSearcher:
 
 
 # ============================================================================
-# AGENT 3: DATA REVIEWER (AI — extended thinking)
+# AGENT 3: DATA REVIEWER (AI - extended thinking)
 # ============================================================================
 def ai_review_data(df: pd.DataFrame, plan: dict) -> dict:
     print("\n🔍 AGENT 3: AI reviewing data quality (extended thinking)...")
@@ -1036,7 +1042,29 @@ class StatisticsEngine:
             "x_std": round(float(df["x"].std()), 4),
             "y_mean": round(float(df["y"].mean()), 4),
             "y_std": round(float(df["y"].std()), 4),
+            "x_stats": {
+                "mean": round(float(df["x"].mean()), 3),
+                "std": round(float(df["x"].std()), 3),
+                "min": round(float(df["x"].min()), 3),
+                "max": round(float(df["x"].max()), 3),
+            },
+            "y_stats": {
+                "mean": round(float(df["y"].mean()), 3),
+                "std": round(float(df["y"].std()), 3),
+                "min": round(float(df["y"].min()), 3),
+                "max": round(float(df["y"].max()), 3),
+            },
         }
+        # Add control variable stats
+        control_cols = [c for c in df.columns if c.startswith("control_")]
+        for cc in control_cols:
+            cname = cc.replace("control_", "")
+            results["descriptive"][f"ctrl_{cname}_stats"] = {
+                "mean": round(float(df[cc].mean()), 3),
+                "std": round(float(df[cc].std()), 3),
+                "min": round(float(df[cc].min()), 3),
+                "max": round(float(df[cc].max()), 3),
+            }
         return results
 
     def _ols(self, df):
@@ -1125,7 +1153,7 @@ class StatisticsEngine:
 
 
 # ============================================================================
-# AGENT 5: RESULTS INTERPRETER (AI — extended thinking)
+# AGENT 5: RESULTS INTERPRETER (AI - extended thinking)
 # ============================================================================
 def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 1) -> dict:
     print("\n⚖️ AGENT 5: AI interpreting results (extended thinking)...")
@@ -1162,79 +1190,61 @@ Return JSON:
 
 
 # ============================================================================
-# AGENT 6: PAPER WRITER (AI — academic discipline, NO extended thinking)
+# AGENT 6: PAPER WRITER (AI - academic discipline, NO extended thinking)
 # ============================================================================
 WRITING_RULES = """WRITING RULES (follow strictly):
 
-These rules synthesize three traditions: Orwell's "Politics and the English Language," McCloskey's "Economical Writing," and the prose style of the most-cited empirical economics papers (Autor/Dorn/Hanson, Acemoglu/Robinson, Chetty). The goal is a paper that is rigorous enough for peer review but clear enough that a smart non-economist can follow every argument.
-
-═══ ORWELL'S RULES (sentence level) ═══
-1. Never use a dead metaphor or figure of speech you are used to seeing in print. No "sheds light on," "level playing field," "the elephant in the room," "at the end of the day," "drives growth," "the landscape of." If you have seen the phrase in ten other papers, delete it and say what you actually mean.
-2. Never use a long word where a short one will do. "Use" not "utilize." "Show" not "demonstrate." "About" not "approximately." "But" not "however" (when starting a sentence). "Because" not "due to the fact that."
-3. If it is possible to cut a word out, always cut it out. Delete "it is important to note that," "it should be noted that," "it is worth mentioning that," "in order to," "the fact that," "in the context of," "a growing body of literature suggests." These add zero information.
-4. Never use the passive where you can use the active. "We estimate" not "it was estimated." "The coefficient falls" not "a decline in the coefficient was observed." Use passive only for conventional methodological descriptions: "Standard errors are clustered by country."
-5. Never use jargon or a foreign phrase where plain English will do. If you must use a technical term (heteroskedasticity, endogeneity), define it on first use in parenthetical plain language. Write for the reader who is intelligent but not an economist.
+═══ ORWELL'S RULES ═══
+1. Never use a dead metaphor. No "sheds light on," "level playing field," "at the end of the day," "the landscape of." If you have seen the phrase in ten other papers, delete it and say what you actually mean.
+2. Never use a long word where a short one will do. "Use" not "utilize." "Show" not "demonstrate." "About" not "approximately." "But" not "however" (when starting a sentence).
+3. If it is possible to cut a word out, always cut it out. Delete "it is important to note that," "it should be noted that," "in order to," "the fact that," "a growing body of literature suggests."
+4. Never use the passive where you can use the active. "We estimate" not "it was estimated." Keep passive only for method conventions: "Standard errors are clustered by country."
+5. Never use jargon where plain English will do. Technical terms get a one-line parenthetical on first use.
 6. Break any of these rules sooner than write anything barbarous.
 
-═══ McCLOSKEY'S RULES (paragraph level) ═══
-7. Writing is rewriting. Every sentence must earn its place. If a sentence could be removed without the reader noticing, remove it.
-8. Read the paragraph aloud. If it sounds like a bureaucratic memo, rewrite it. If it sounds like a conversation with a smart colleague, keep it.
-9. Put the stress at the end of the sentence. The most important word or phrase goes last. "Growth was associated with urbanization" is weaker than "Urbanization was associated with growth." Put the new information, the punch, at the end.
-10. Do not start consecutive sentences the same way. Varying sentence openings is not about rhythm for its own sake — it prevents the reader from glazing over.
-11. One hedge per claim, maximum. "The coefficient suggests a modest association" is honest. "It may potentially suggest a tentatively modest possible association" is cowardly. State the finding, qualify it once, move on.
-12. Avoid elegant variation. If you called it "education spending" in paragraph one, do not call it "educational expenditure" in paragraph two and "government outlay on schooling" in paragraph three. Pick one term and stick with it. Variation confuses the reader into wondering whether you mean something different.
-13. Never begin a paper, section, or paragraph with throat-clearing. No "It is well known that," "Scholars have long debated," "A growing body of literature." Start with the substance.
+═══ IMF WORKING PAPER STYLE ═══
+7. Numbered paragraphs (1., 2., 3., etc.) in the introduction. Each paragraph opens with a bold declarative takeaway sentence. Attach a number to every claim.
+8. Every coefficient must be translated into real-world units. "A one-percentage-point increase in X corresponds to 0.34 additional units of Y" is clear. Regression notation alone is not.
+9. One hedge per claim, maximum. State the finding, qualify it once, move on.
+10. Results are reported, not narrated. Open with a table reference. State the coefficient and significance. Translate once. Compare specifications.
+11. The conclusion must be statable in one sentence a non-economist can understand.
 
-═══ TOP PAPERS PATTERN (section level) ═══
-How the best empirical papers structure their argument — drawn from Autor/Dorn/Hanson, Acemoglu/Johnson/Robinson, Chetty/Hendren:
+═══ VOICE AND CADENCE ═══
+12. VARY SENTENCE LENGTH. Mix 8-word sentences with 35-word sentences. After a long sentence, drop a short one: "The results are clear." Or: "That assumption is wrong."
+13. BE BLUNT. If the coefficient is near zero, write: "The effect is negligible." If R-squared is 0.03, write: "The model explains almost nothing."
+14. ROUGH TRANSITIONS. Do not connect every paragraph with "Furthermore" or "Additionally." Just start the next thought.
+15. SUBORDINATE CITATIONS. Never make an author name the grammatical subject unless attributing a specific intellectual move. The finding leads, the citation follows in parentheses.
+16. ALLOW IMPERFECT RHYTHM. Some paragraphs should be 2 sentences. Some should be 6. Do not make every paragraph claim-evidence-qualification.
+17. FOCUS ON INTERPRETATION. When discussing results, talk about economic meaning, not indicator codes. "Education spending" not "SE.XPD.TOTL.GD.ZS." The reader cares about what the numbers mean, not which database column they came from.
 
-14. The introduction follows: CONSENSUS → DISRUPTION → THIS PAPER → PREVIEW. State what the literature broadly finds. State what remains unresolved or where the evidence is weaker than assumed. State what this paper does differently (data, method, scope). Preview the main finding with one number.
+═══ FEW-SHOT EXAMPLES (match this cadence) ═══
 
-15. The literature review is a MAP, not a DEBATE. Organize by method and scope, not by "camps" or "sides." Group studies by what data they use, what identification strategy they employ, and what they find. End with the gap this paper fills.
+EXAMPLE A (IMF introduction, Shibata 2025):
+"Spain's significant per capita income gap with highest-income euro area economies and the United States primarily reflects a wide productivity shortfall. In 2024, Spain's income per capita in PPP terms stood nearly 40 and 16 percent below that of the US and the other three largest euro area economies, respectively. While both lower capital intensity and fewer total working hours accounted for some of the gap, weaker total factor productivity accounted for over two-thirds of it."
+Note: First sentence is the bold takeaway. Second sentence attaches numbers immediately. Third sentence qualifies with "while." No em dashes, no semicolons, no colons for drama.
 
-16. Results are reported, not narrated. Open with a table reference. State the coefficient, standard error, and significance. Translate into plain language once. Compare specifications. Do not tell a story about why the numbers are what they are — that goes in Discussion.
+EXAMPLE B (Hanushek and Woessmann 2021, introduction):
+"Economic growth determines the well-being of society over time, but the source of differences in growth rates of countries are continuously debated. Intensive analysis over the past three decades has, however, produced a much clearer picture. In simplest terms, long-term economic growth is largely determined by the skills of the population."
+Note: 3 sentences. The third is the punchline, short and declarative. The transition "In simplest terms" is conversational.
 
-═══ ACADEMIC POPULIST CLARITY ═══
-17. Every coefficient must be translated into a real-world unit the reader can picture. "$349 more per capita" is clear. "β = 349.21, p < 0.001" alone is not. Always provide both.
-18. When a result contradicts expectations, say so plainly. "The pooled estimate is 478; the fixed-effects estimate drops to 349. The difference suggests that much of the cross-country correlation reflects permanent country characteristics rather than a causal urbanization effect."
-19. Technical terms get a one-line parenthetical the first time they appear. "Country fixed effects (a method that compares each country only to itself over time, stripping out permanent differences between countries) reduce the coefficient by half."
-20. The conclusion must be statable in one sentence. If you cannot reduce the paper's main finding to one sentence that a non-economist would understand, the paper is not done.
+EXAMPLE C (IMF, discussing firm dynamics):
+"The Spanish economy is less dynamic than European peers and, most strikingly, the US, particularly with respect to the footprint of young high-growth firms, resulting in an overabundance of small firms. While average entry and exit rates are broadly comparable, Spanish and European firms enter small. Even more importantly, Spanish and European firms struggle to scale up."
+Note: "Even more importantly" is direct. No "Furthermore." The short sentence "Spanish and European firms enter small" punches after the long opener.
 
-═══ VOICE AND CADENCE (the difference between human and AI prose) ═══
-The rules above catch bad habits. This section teaches good ones. The goal is prose that sounds like a working economist drafted it quickly for a co-author — not prose that sounds like it was generated by a language model trying to sound academic.
+EXAMPLE D (Hanushek and Woessmann 2021, stating a null result):
+"The relationship is now flat. School attainment is not statistically significant in the presence of the direct cognitive-skill measure of human capital."
+Note: Blunt. No hedging. Two sentences where AI would write one long hedged one.
 
-21. VARY SENTENCE LENGTH DRASTICALLY. Mix 8-word sentences with 35-word sentences. AI prose uses 25-30 words for almost every sentence. Break that pattern. After a long sentence with multiple clauses, drop in a short one: "This is not, however, without controversy." Or: "The results are clear." Or: "That assumption is wrong."
-
-22. BE BLUNT WHEN THE EVIDENCE IS BLUNT. Do not cushion every finding in qualifications. If the coefficient is near zero, write: "The effect is negligible." If R-squared is 0.03, write: "The model explains almost nothing." If a result contradicts the hypothesis, say so in plain language before adding nuance.
-
-23. USE ROUGH TRANSITIONS. Real papers do not always connect paragraphs with smooth bridges. Sometimes a new paragraph just starts a new thought: "Measurement issues compound the problem." No "Furthermore," no "Additionally," no "It is also worth noting that." Just start.
-
-24. SUBORDINATE CITATIONS. Never let an author name be the grammatical subject of a sentence unless that author made a specific intellectual move you need to attribute. WRONG: "Gbadebo (2025) presents evidence that electricity access drives growth." RIGHT: "Electricity access drives growth in West Africa, with effects concentrated in manufacturing output (Gbadebo 2025)." The finding leads; the citation follows in parentheses.
-
-25. ALLOW IMPERFECT RHYTHM. Do not make every paragraph follow the same structure. Some paragraphs should be 2 sentences. Some should be 6. Some should open with a question. Some should open with a number. AI prose makes every paragraph 4-5 sentences with claim-evidence-qualification. Break that mold.
-
-26. USE PARENTHETICAL ASIDES. Real economists interrupt themselves: "The effect is positive (though small) across all specifications." Or: "The coefficient—roughly half the bivariate estimate—suggests substantial confounding." These asides create texture that AI prose lacks.
-
-TARGET CADENCE — study these examples from highly cited economics papers and match their rhythm:
-
-EXAMPLE A (introduction opening): "Economic growth determines the well-being of society over time, but the source of differences in growth rates of countries are continuously debated. Intensive analysis over the past three decades has, however, produced a much clearer picture. In simplest terms, long-term economic growth is largely determined by the skills of the population."
-Note: 3 sentences. Lengths: 21, 16, 16 words. The second sentence is a pivot. The third is the punchline — short and declarative.
-
-EXAMPLE B (discussing conflicting evidence): "Estimates based on this model have been shown to be very sensitive to the specification of the model. Bils and Klenow raise the issue of causality, suggesting that reverse causation may be at least as important as the causal effect. A simple summary of this work is that while human capital is closely related to economic growth, the measurement of human capital poses serious problems."
-Note: The transition "A simple summary of this work" is conversational. No "Furthermore" or "Additionally."
-
-EXAMPLE C (stating a null result): "The relationship is now flat; that is, school attainment is not statistically significant in the presence of the direct cognitive-skill measure."
-Note: Blunt. No hedging. A semicolon for emphasis, not a new paragraph.
-
-Write like these examples. Not like a language model.
-
-═══ WHAT TO NEVER DO ═══
-- Never editorialize about your own results: no "the data speak clearly," "striking," "remarkably," "notably," "the gap tells a revealing story," "sounds meaningful until you notice," "the punchline is cautionary."
-- Never use literary or rhetorical devices: no "the hypothesis holds in direction; it stumbles in magnitude," "cases like these sit uneasily beside," "the answer carries real fiscal weight."
-- Never use rhetorical questions.
-- Never address the reader directly ("consider what this implies").
+═══ BANNED WORDS AND PUNCTUATION ═══
+- NEVER use: "drive," "drives," "driven," "driving" (say "is associated with," "corresponds to," "leads to" only with causal evidence). Also banned: "landscape," "paradigm," "robust" (as praise), "compelling," "striking," "remarkable," "notable," "critical" (as emphasis), "garnered," "pivotal," "key insight," "mounting evidence," "increasingly recognized," "underscores," "highlights."
+- NEVER use em dashes. Use commas or parentheses instead.
+- NEVER use semicolons for rhetorical effect. Use a period and start a new sentence.
+- NEVER use colons for dramatic reveals.
+- Use hyphens (-) for compound words. Not en dashes, not em dashes. Just hyphens.
+- Never editorialize: no "the data speak clearly," "the gap tells a revealing story," "the punchline is cautionary."
+- Never use rhetorical questions or address the reader directly.
 - Never open with "Conventional wisdom holds..." or any hook/framing device.
-- Never discuss channels, mechanisms, or variables NOT measured in the dataset.
+- Never discuss channels or variables NOT measured in the dataset.
 - No markdown formatting. No #, **, *, `, $$.
 - Do NOT write a full paper. Write ONLY the section requested.
 
@@ -1251,7 +1261,7 @@ def build_advocacy_instruction(advocacy_angle: str, advocacy_temperature: int) -
     angle = advocacy_angle.strip()
 
     if advocacy_temperature <= 3:
-        # Subtle — barely noticeable lean
+        # Subtle - barely noticeable lean
         return f"""
 FRAMING GUIDANCE (subtle):
 The author has a perspective: "{angle}".
@@ -1261,7 +1271,7 @@ Still cite counterarguments and acknowledge limitations fully. A careful reader 
 perspective, but it should not feel like advocacy. Data and statistics remain completely untouched."""
 
     elif advocacy_temperature <= 6:
-        # Moderate — clear perspective but fair
+        # Moderate - clear perspective but fair
         return f"""
 FRAMING GUIDANCE (moderate):
 The author's perspective: "{angle}".
@@ -1271,32 +1281,32 @@ that makes this perspective's importance obvious. The literature review should g
 When interpreting results, emphasize findings that align with the perspective. The conclusion
 and policy section should argue for this position, but include honest caveats where the evidence
 is weak. The reader should understand the author's position but also trust the honesty of the analysis.
-Data and statistics remain completely untouched — only the narrative framing shifts."""
+Data and statistics remain completely untouched, only the narrative framing shifts."""
 
     elif advocacy_temperature <= 8:
-        # Strong — clear policy argument
+        # Strong - clear policy argument
         return f"""
 FRAMING GUIDANCE (strong):
 The author's perspective: "{angle}".
 Write as a policy argument grounded in evidence. The introduction should make a case for why this
 perspective matters urgently. The literature review should lead with and emphasize supporting evidence
 (roughly 75/25 split), mentioning opposing views briefly as "some studies suggest... however."
-Interpret all results through this lens — when a coefficient supports the argument, highlight it;
+Interpret all results through this lens. When a coefficient supports the argument, highlight it;
 when it doesn't, contextualize it ("while the cross-sectional estimate is modest, the fixed-effects
 result points toward..."). The conclusion should be assertive. Policy recommendations should be
-bold and specific, directly advocating for the perspective. Still maintain academic credibility —
+bold and specific, directly advocating for the perspective. Still maintain academic credibility.
 don't fabricate or distort numbers, but make every real finding work as hard as possible for the argument.
-Data and statistics remain completely untouched — only the narrative framing shifts."""
+Data and statistics remain completely untouched, only the narrative framing shifts."""
 
     else:
-        # Maximum — strongest possible advocacy
+        # Maximum - strongest possible advocacy
         return f"""
 FRAMING GUIDANCE (maximum advocacy):
 The author's perspective: "{angle}".
 Write as a persuasive policy document that happens to use rigorous methodology. Every section should
 advance this argument. The introduction should read as a call to action. The literature review should
 build the case systematically, leading with the strongest supporting evidence and treating opposing
-views as outdated, limited in scope, or methodologically weaker. Interpret every result favorably —
+views as outdated, limited in scope, or methodologically weaker. Interpret every result favorably.
 find the angle that supports the argument. If the overall result is weak, focus on subgroups or
 specifications where it is stronger. The conclusion should be a forceful argument for policy change.
 Policy recommendations should be bold, specific, and urgent.
@@ -1403,7 +1413,7 @@ class PaperWriter:
 
         return {
             "abstract": (
-                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an abstract (150-200 words). {WRITING_RULES}{adv}\n{self.cites}",
+                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an abstract (150-200 words). {WRITING_RULES}{adv}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']}
 Y: {self.plan['y_label']}
@@ -1415,21 +1425,23 @@ Tone: {self.interp.get('recommended_tone','cautious')}
 
 Write the abstract following PubMed structured abstract format. Use these four labeled sections:
 
-VOICE: Be plain and direct. No "compelling," "critical," "notable," "garnered attention." Just state what was done and what was found. Vary sentence length — some short (under 12 words), some longer.
+VOICE: Be plain and direct. No "compelling," "critical," "notable," "garnered attention." Just state what was done and what was found. Vary sentence length. Some short (under 12 words), some longer.
 
-OBJECTIVE: (1-2 sentences) State what this study examines and why. "This study examines whether X is associated with Y, a relationship that underpins [specific policy assumption]." State the gap or contested question.
+OBJECTIVE: (1-2 sentences) State what this study examines and why. State the gap or contested question.
 
-METHODS: (2-3 sentences) State the data source, sample scope (N countries, M years, K observations), and the identification strategy. Name the estimators: pooled OLS with controls and country fixed effects. State what the fixed effects absorb.
+METHODS: (2-3 sentences) State the data source, sample scope (N countries, M years, K observations), and the identification strategy. Name the estimators.
 
-RESULTS: (2-3 sentences) State the key coefficients from BOTH specifications with p-values, translated into plain units. State what happens to the coefficient across specifications (bivariate to controlled to fixed effects). State the within R-squared.
+RESULTS: (2-3 sentences) State the key coefficients from BOTH specifications with p-values, translated into plain units. State what happens to the coefficient across specifications.
 
-CONCLUSIONS: (1-2 sentences) State the main implication and the primary limitation. Use cautious language: "These results suggest..." or "The evidence does not support..."
+CONCLUSIONS: (1-2 sentences) State the main implication and the primary limitation.
 
 RULES:
 - Use the four headers: OBJECTIVE, METHODS, RESULTS, CONCLUSIONS
+- ABSOLUTELY NO CITATIONS in the abstract. No "(Author Year)" references at all. The abstract stands alone without any parenthetical citations.
 - No hooks, no rhetorical devices, no framing. Plain academic reporting.
 - Every sentence in RESULTS must contain a number.
-- Do NOT open with "Conventional wisdom holds..." or any scene-setting.""",
+- Do NOT open with "Conventional wisdom holds..." or any scene-setting.
+- No em dashes. Use commas or parentheses. No semicolons. No colons for dramatic effect.""",
             ),
             "introduction": (
                 f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY an introduction in IMF Working Paper style (500-700 words). {WRITING_RULES}{adv}\n{self.cites}",
@@ -1441,11 +1453,15 @@ Data: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
 
 Write NUMBERED paragraphs (1., 2., 3., etc.) in IMF Working Paper style.
 
-VOICE: Write like an economist drafting for a co-author, not like a language model generating an academic paper. Vary sentence length: some sentences 8 words, some 35. After a complex sentence, drop a short blunt one. Use rough transitions — not every paragraph needs "Furthermore" or "Additionally." Allow parenthetical asides.
+VOICE: Write like an economist drafting for a co-author, not like a language model generating an academic paper. Vary sentence length: some sentences 8 words, some 35. After a complex sentence, drop a short blunt one. Use rough transitions, not every paragraph needs "Furthermore" or "Additionally." Allow parenthetical asides. NO em dashes. NO semicolons. NO colons for dramatic effect. Use commas or parentheses instead.
 
 Here is what good introduction prose looks like (match this cadence):
-"Economic growth determines the well-being of society over time, but the source of differences in growth rates are continuously debated. Intensive analysis over the past three decades has, however, produced a much clearer picture. In simplest terms, long-term economic growth is largely determined by the skills of the population."
-Note how the third sentence is the punchline — short and declarative after two longer setup sentences. Your introduction paragraphs should follow this pattern: build, then punch.
+
+IMF STYLE: "Spain's significant per capita income gap with highest-income euro area economies and the United States primarily reflects a wide productivity shortfall. In 2024, Spain's income per capita in PPP terms stood nearly 40 and 16 percent below that of the US and the other three largest euro area economies, respectively."
+Note: Bold takeaway first, then numbers. No em dashes, no dramatic punctuation.
+
+HANUSHEK STYLE: "Economic growth determines the well-being of society over time, but the source of differences in growth rates of countries are continuously debated. Intensive analysis over the past three decades has, however, produced a much clearer picture. In simplest terms, long-term economic growth is largely determined by the skills of the population."
+Note: 3 sentences. The third is the punchline, short and declarative after two longer setup sentences.
 
 IMF INTRODUCTION RULES:
 - Opening sentence of each paragraph is the TAKEAWAY: bold, declarative, no hedging
@@ -1481,7 +1497,7 @@ IMF RULES:
 
 Write the literature review in exactly 4 paragraphs, organized by METHOD AND SCOPE, not by rhetorical position:
 
-VOICE: Write like an economist who has read these papers and is summarizing what the field knows — not like a language model cataloguing sources. Vary sentence length. Some sentences should be 10 words. Use rough transitions. Be blunt about weak studies.
+VOICE: Write like an economist who has read these papers and is summarizing what the field knows, not like a language model cataloguing sources. Vary sentence length. Some sentences should be 10 words. Use rough transitions. Be blunt about weak studies. NO em dashes. NO semicolons. NO colons for dramatic effect.
 
 CITATION RULE (CRITICAL): NEVER make an author name the grammatical subject of a sentence. NEVER write "Gbadebo (2025) presents..." or "Piyinchu (2025) examines..." or "Sart et al. (2026) analyze..."
 INSTEAD, lead with the finding and put the citation in parentheses:
@@ -1491,19 +1507,23 @@ INSTEAD, lead with the finding and put the citation in parentheses:
 This is non-negotiable. Every citation must follow this pattern. The finding leads; the author follows.
 
 TARGET CADENCE for lit review paragraphs:
-"The early studies that found positive effects of years of schooling on economic growth quite plausibly suffered from reverse causality; that is, improved growth was leading to more schooling rather than the reverse. There is less reason to think that higher student achievement is caused by economic growth."
-Note: A semicolon for emphasis. A short second sentence. No "Furthermore" or "Additionally."
 
-PARAGRAPH 1 — CROSS-COUNTRY EVIDENCE (4-5 sentences):
+IMF STYLE: "Leading Spanish firms are trailing behind their competitors on both productivity growth and, even more so, innovation, especially in the tech sector. No Spanish firm features among the top 100 global firms in terms of market capitalization. The top two Spanish firms in terms of sales in 2022 were already the top two firms back in 2000, with such lack of churn at the top hinting at lack of business dynamism."
+Note: First sentence is the finding. Second is a short punchy fact. Third adds context with a consequence clause.
+
+HANUSHEK STYLE: "The early studies that found positive effects of years of schooling on economic growth quite plausibly suffered from reverse causality. Improved growth was leading to more schooling rather than the reverse. There is less reason to think that higher student achievement is caused by economic growth."
+Note: Short sentences. No "Furthermore" or "Additionally." Just state what each group of studies finds.
+
+PARAGRAPH 1 - CROSS-COUNTRY EVIDENCE (4-5 sentences):
 Summarize studies that use cross-country panels or cross-sectional data. For each, state the sample, the identification strategy, and the key coefficient or finding. Cite 3-4 papers.
 
-PARAGRAPH 2 — WITHIN-COUNTRY AND SUBNATIONAL EVIDENCE (4-5 sentences):
+PARAGRAPH 2 - WITHIN-COUNTRY AND SUBNATIONAL EVIDENCE (4-5 sentences):
 Summarize studies using subnational data, natural experiments, or case studies within specific countries or regions. How do within-country findings compare to the cross-country evidence? Cite 3-4 papers.
 
-PARAGRAPH 3 — COMPETING CHANNELS AND CONFOUNDERS (4-5 sentences):
+PARAGRAPH 3 - COMPETING CHANNELS AND CONFOUNDERS (4-5 sentences):
 Summarize studies that identify alternative explanations or mediating variables. What else might explain the relationship? Which studies suggest the bivariate association is spurious once controls are added? Cite 3-4 papers.
 
-PARAGRAPH 4 — THE GAP (2-3 sentences):
+PARAGRAPH 4 - THE GAP (2-3 sentences):
 State precisely what the existing literature has not done. What sample, method, or specification is missing? State how the present analysis fills that gap. This paragraph should make the transition to the methodology section feel inevitable.
 
 RULES:
@@ -1523,17 +1543,17 @@ N: {desc.get('n_obs','N/A')} observations, {desc.get('n_countries','N/A')} count
 
 Write exactly 3 paragraphs:
 
-PARAGRAPH 1 — DATA (3-4 sentences):
+PARAGRAPH 1 - DATA (3-4 sentences):
 State the data source, the sample scope (number of countries, years, total observations), and the key variables. Define X and Y precisely. Mention the control variables in one sentence, stating what confound each blocks (e.g., "GDP per capita absorbs the income channel").
 
-PARAGRAPH 2 — SPECIFICATION (3-4 sentences):
+PARAGRAPH 2 - SPECIFICATION (3-4 sentences):
 Present the baseline controlled model:
 [EQ]Y_{{it}} = α + β × X_{{it}} + γ Controls_{{it}} + ε_{{it}}[/EQ]
 Then present the fixed-effects specification:
 [EQ]Y_{{it}} = β × X_{{it}} + μ_{{i}} + ε_{{it}}[/EQ]
 Explain in one sentence what μ_{{i}} absorbs (all time-invariant country characteristics). State that the fixed-effects coefficient answers a sharper question: within-country variation over time.
 
-PARAGRAPH 3 — SAMPLE CONSTRUCTION (2-3 sentences):
+PARAGRAPH 3 - SAMPLE CONSTRUCTION (2-3 sentences):
 Note any data cleaning (winsorization, minimum observations per country, exclusion of zeros). State the final estimation sample size.
 
 Do NOT interpret results. Do NOT discuss what you expect to find. Just describe the data and the method.""",
@@ -1548,18 +1568,18 @@ FULL STATISTICAL RESULTS:
 
 Write exactly 3-4 paragraphs. This section ONLY presents findings. No interpretation of why, no policy implications, no caveats about identification. Just results.
 
-VOICE: Be terse. State the number, translate it once, move on. Some sentences should be under 12 words: "The effect is small." "The sign flips." "This pattern is consistent across specifications." Do not pad results with filler.
+VOICE: Be terse. State the number, translate it once, move on. Some sentences should be under 12 words: "The effect is small." "The sign flips." "This pattern is consistent across specifications." Do not pad results with filler. NO em dashes. NO semicolons. NO colons for dramatic effect. Focus on what the numbers mean economically, not on indicator codes.
 
-PARAGRAPH 1 — HEADLINE RESULT (3-4 sentences):
+PARAGRAPH 1 - HEADLINE RESULT (3-4 sentences):
 Open with "Table 2 reports the main estimation results." Then state the OLS+controls coefficient, its standard error, p-value, and R-squared. Translate the coefficient into plain units in one sentence (e.g., "each percentage-point increase in X is associated with Y additional units of Z"). State the sample size.
 
-PARAGRAPH 2 — FIXED EFFECTS (3-4 sentences):
+PARAGRAPH 2 - FIXED EFFECTS (3-4 sentences):
 State the fixed-effects coefficient, standard error, p-value, and within R-squared. Compare it to the controlled OLS estimate: is it larger, smaller, or similar? State factually what the difference implies about the role of time-invariant confounders versus within-country dynamics.
 
-PARAGRAPH 3 — ROBUSTNESS (2-3 sentences):
+PARAGRAPH 3 - ROBUSTNESS (2-3 sentences):
 Report the Pearson and Spearman correlations as supporting descriptive evidence. Note the bivariate OLS coefficient briefly as a benchmark. State whether the sign and significance are consistent across all specifications.
 
-PARAGRAPH 4 (optional) — SPECIFICATION COMPARISON (2-3 sentences):
+PARAGRAPH 4 (optional) - SPECIFICATION COMPARISON (2-3 sentences):
 If the controlled OLS coefficient differs substantially from the fixed-effects estimate, state the difference quantitatively. Note which controls absorb the most variation when added to the model.
 
 CRITICAL RULES:
@@ -1580,15 +1600,15 @@ Fixed effects: B={fe_result.get('coefficient','N/A')}, p={fe_result.get('p_value
 
 Write exactly 3 paragraphs. This is where interpretation belongs:
 
-VOICE: This section can be more conversational than Results or Methodology. Use parenthetical asides. Be blunt about threats: "Reverse causality is the obvious problem." Use short sentences after long ones. Do not hedge every sentence.
+VOICE: This section can be more conversational than Results or Methodology. Use parenthetical asides. Be blunt about threats: "Reverse causality is the obvious problem." Use short sentences after long ones. Do not hedge every sentence. NO em dashes. NO semicolons. NO colons for dramatic effect.
 
-PARAGRAPH 1 — WHAT THE RESULTS MEAN (3-4 sentences):
+PARAGRAPH 1 - WHAT THE RESULTS MEAN (3-4 sentences):
 Interpret the main finding in context. How does the coefficient compare to findings in the literature? Is the effect large or small relative to other studies? What does the difference between the OLS and fixed-effects estimates tell us about the underlying mechanism? Cite 2-3 papers from the verified list for comparison.
 
-PARAGRAPH 2 — IDENTIFICATION CONCERNS (3-4 sentences):
+PARAGRAPH 2 - IDENTIFICATION CONCERNS (3-4 sentences):
 State the specific threats to causal identification. Do not write "endogeneity is a concern" in the abstract. Instead, name the specific confounders or reverse causality channels that could bias the estimate. For each threat, state its likely direction of bias (upward or downward). Be concrete.
 
-PARAGRAPH 3 — WHAT THE CONTROLS REVEAL (2-3 sentences):
+PARAGRAPH 3 - WHAT THE CONTROLS REVEAL (2-3 sentences):
 Discuss what happens when controls are added. If the coefficient shrinks, which control absorbs the most variation, and what does that imply about the channels through which X operates? If the coefficient grows under fixed effects, what does that imply about cross-country heterogeneity?
 
 Do NOT include policy recommendations. Do NOT repeat the coefficient values unless comparing them to other studies.""",
@@ -1643,7 +1663,7 @@ RULES:
 
 
 # ============================================================================
-# AGENT 6b: PROOFREADER (AI — NO extended thinking)
+# AGENT 6b: PROOFREADER (AI - NO extended thinking)
 # ============================================================================
 def ai_proofread(sections: dict) -> dict:
     print("\n🔎 AGENT 6b: Proofreading all sections...")
@@ -1660,36 +1680,34 @@ def ai_proofread(sections: dict) -> dict:
 YOUR EDITING PRIORITIES (in order):
 
 1. ORWELL'S RULES: Apply ruthlessly.
-   - Replace dead metaphors: "sheds light on" → say what it actually reveals. "Level playing field" → delete. "At the end of the day" → delete. "Drives growth" → "is associated with growth."
-   - Replace long words with short ones: "utilize" → "use," "demonstrate" → "show," "approximately" → "about," "facilitate" → "help," "notwithstanding" → "despite."
-   - Cut filler: delete every instance of "it is important to note that," "it should be noted that," "it is worth mentioning that," "in order to" (→ "to"), "the fact that," "in the context of," "a growing body of literature."
-   - Fix passive voice: "it was found that X" → "we find X." "A decline was observed" → "the coefficient falls." Keep passive only for method conventions.
+   - Replace dead metaphors: "sheds light on" -> say what it actually reveals. "Level playing field" -> delete. "At the end of the day" -> delete.
+   - Replace long words with short ones: "utilize" -> "use," "demonstrate" -> "show," "approximately" -> "about," "facilitate" -> "help."
+   - Cut filler: delete every instance of "it is important to note that," "it should be noted that," "in order to" (-> "to"), "the fact that," "a growing body of literature."
+   - Fix passive voice: "it was found that X" -> "we find X." Keep passive only for method conventions.
 
-2. McCLOSKEY'S RULES:
-   - Throat-clearing: delete any sentence that exists only to announce what the next sentence will say.
-   - Stress at end: if a sentence buries its important information in the middle, restructure so the key finding lands at the end.
-   - Elegant variation: if the same concept has three names across the paper, standardize to one term.
-   - Hedge stacking: if a sentence has more than one hedge ("may possibly suggest a tentatively positive"), keep only the most necessary one.
+2. BANNED WORDS (delete or replace every instance):
+   - "drive," "drives," "driven," "driving" -> "is associated with," "corresponds to," or restructure
+   - "landscape," "paradigm," "robust" (as praise), "compelling," "striking," "remarkable," "notable," "critical" (as emphasis), "garnered," "pivotal," "key insight," "mounting evidence," "increasingly recognized," "underscores," "highlights"
+   - All evaluative filler: "the data speak clearly," "the gap tells a revealing story," "the punchline is cautionary," "sit uneasily beside," "carries real fiscal weight"
 
-3. EDITORIALIZING: Delete ALL evaluative language about the paper's own results. Delete: "the data speak clearly," "striking," "remarkably," "notably," "the gap tells a revealing story," "sounds meaningful until," "the punchline is cautionary," "sit uneasily beside," "carries real fiscal weight," "the hypothesis holds in direction." Remove literary devices: metaphors, dramatic fragments, parallel constructions used for rhetorical effect.
+3. BANNED PUNCTUATION:
+   - Replace ALL em dashes with commas or parentheses. No exceptions.
+   - Replace semicolons used for rhetorical effect with periods. Keep semicolons only in citation lists.
+   - Remove colons used for dramatic reveals. Restructure the sentence.
+   - Use hyphens (-) for compound words, never en dashes or em dashes.
 
-4. CAUSALITY DISCIPLINE: Replace "leads to," "causes," "drives," "improves," "affects" with "is associated with," "corresponds to," or "is linked to."
+4. CAUSALITY DISCIPLINE: Replace "leads to," "causes," "improves," "affects" with "is associated with," "corresponds to," or "is linked to" unless the paper has causal identification.
 
-5. UNMEASURED CHANNELS: Remove discussion of mechanisms or variables NOT in the dataset.
+5. CITATION FORMAT: If any sentence begins with "AuthorName (Year) demonstrates/examines/finds," restructure so the finding leads and the citation follows in parentheses.
 
-6. PARAGRAPH DISCIPLINE: Check each paragraph does ONE job. If a paragraph mixes claim + evidence + interpretation + caveat, split it.
+6. ABSTRACT CHECK: If the abstract contains ANY parenthetical citations like "(Author Year)", remove them entirely.
 
-7. ACCESSIBILITY: Every coefficient must be translated into real-world units at least once. If a technical term (fixed effects, endogeneity, heteroskedasticity) appears without explanation, add a brief parenthetical.
+7. AI CADENCE DETECTION:
+   - SENTENCE LENGTH: If 3+ consecutive sentences are all 20-35 words, break the pattern. Add a short sentence or combine two.
+   - SMOOTH TRANSITIONS: Replace "Furthermore," "Additionally," "Moreover," "It is also worth noting" with nothing. Just start the next thought.
+   - HEDGE STACKING: Keep ONE hedge per claim maximum.
 
-8. STANDARD CLEANUP: Fix "This paper/study" openers. Remove markdown. Remove duplicated headings.
-
-9. AI CADENCE DETECTION (most important — this is what makes text sound AI-generated):
-   - SENTENCE LENGTH MONOTONY: If 3+ consecutive sentences are all 20-35 words, break the pattern. Split one into two short sentences, or combine two into one long one with a parenthetical aside. Target: no more than 2 consecutive sentences of similar length.
-   - UNIFORM PARAGRAPH STRUCTURE: If every paragraph follows claim-evidence-qualification, restructure some. A paragraph can be 2 sentences. A paragraph can be 6. Not every one should be 4.
-   - SMOOTH TRANSITION ADDICTION: Replace "Furthermore," "Additionally," "Moreover," "It is also worth noting" with nothing. Just start the next thought. Real papers use rough transitions.
-   - AUTHOR-FIRST CITATIONS: If any sentence begins with "AuthorName (Year) demonstrates/examines/presents/analyzes/finds," restructure so the finding leads and the citation follows in parentheses.
-   - HEDGE STACKING: "appears to be more nuanced than simple linear correlations might suggest" has 3 hedges. Keep ONE. Rewrite as: "The relationship is non-linear."
-   - EVALUATIVE FILLER: Delete "compelling evidence," "garnered significant attention," "critical area of inquiry," "mounting evidence suggesting," "increasingly recognized," "notable finding," "pivotal role," "key insight."
+8. INDICATOR CODES: If any World Bank indicator code or AMECO code appears in prose (not in data/methods), replace with the plain-language variable name.
 
 CRITICAL CONSTRAINTS:
 - Keep the EXACT same structure: each section starts with [SECTION_NAME] on its own line.
@@ -1697,7 +1715,7 @@ CRITICAL CONSTRAINTS:
 - Do NOT add markdown formatting.
 - Keep the substance identical. Only fix discipline problems.
 - Preserve all [EQ]...[/EQ] equation markers exactly as they are.
-- Do NOT make the writing more dramatic or engaging. Make it clearer, shorter, and more honest. Apply Orwell: if you can cut a word, cut it.""",
+- Make the writing clearer, shorter, and more honest.""",
         user=f"Edit the following paper sections for academic discipline. Return the FULL text with the same [SECTION_NAME] markers:\n\n{full_text}",
         max_tokens=8000,
     )
@@ -1728,7 +1746,7 @@ CRITICAL CONSTRAINTS:
 
 
 # ============================================================================
-# AGENT 7: DOCUMENT ASSEMBLER (Code — with tables and charts)
+# AGENT 7: DOCUMENT ASSEMBLER (Code - with tables and charts)
 # ============================================================================
 class DocumentAssembler:
     """Assembles the final Word document with academic journal formatting."""
@@ -1920,20 +1938,54 @@ class DocumentAssembler:
 
         headers = ["Variable", "N", "Mean", "Std. Dev.", "Min", "Max"]
         rows = []
-        for var_key, label in [("x", "X"), ("y", "Y")]:
-            s = desc.get(f"{var_key}_stats", {})
-            if s:
+        n_obs_str = str(desc.get("n_obs", ""))
+
+        # X variable
+        x_stats = desc.get("x_stats", {})
+        if x_stats:
+            rows.append([
+                self.plan.get("x_label", "X") if hasattr(self, 'plan') else "X",
+                n_obs_str,
+                f"{x_stats.get('mean', 0):.3f}",
+                f"{x_stats.get('std', 0):.3f}",
+                f"{x_stats.get('min', 0):.3f}",
+                f"{x_stats.get('max', 0):.3f}",
+            ])
+
+        # Y variable
+        y_stats = desc.get("y_stats", {})
+        if y_stats:
+            rows.append([
+                self.plan.get("y_label", "Y") if hasattr(self, 'plan') else "Y",
+                n_obs_str,
+                f"{y_stats.get('mean', 0):.3f}",
+                f"{y_stats.get('std', 0):.3f}",
+                f"{y_stats.get('min', 0):.3f}",
+                f"{y_stats.get('max', 0):.3f}",
+            ])
+
+        # Control variables
+        for key, val in desc.items():
+            if key.startswith("ctrl_") and key.endswith("_stats") and isinstance(val, dict):
+                ctrl_name = key.replace("ctrl_", "").replace("_stats", "").replace("_", " ").title()
                 rows.append([
-                    label,
-                    str(desc.get("n_obs", "")),
-                    f"{s.get('mean', 0):.3f}",
-                    f"{s.get('std', 0):.3f}",
-                    f"{s.get('min', 0):.3f}",
-                    f"{s.get('max', 0):.3f}",
+                    ctrl_name,
+                    n_obs_str,
+                    f"{val.get('mean', 0):.3f}",
+                    f"{val.get('std', 0):.3f}",
+                    f"{val.get('min', 0):.3f}",
+                    f"{val.get('max', 0):.3f}",
                 ])
 
         if rows:
-            self._add_table(doc, headers, rows, [1.2, 0.7, 1.0, 1.0, 1.0, 1.0])
+            self._add_table(doc, headers, rows, [1.8, 0.6, 0.9, 0.9, 0.9, 0.9])
+
+        # Add note below table
+        note_p = doc.add_paragraph()
+        note_run = note_p.add_run(f"Note: {desc.get('n_countries', 'N/A')} countries, {desc.get('year_range', 'N/A')}. Source: World Bank/AMECO.")
+        note_run.font.size = Pt(8)
+        note_run.font.italic = True
+        note_run.font.name = "Times New Roman"
 
     def _add_regression_table(self, doc, results, plan):
         doc.add_paragraph("")
@@ -1980,6 +2032,7 @@ class DocumentAssembler:
     def create(self, plan, sections, all_results, literature, controls_fetched, output_path,
                scatterplot_path=None, coeff_plot_path=None):
         print("\n📄 AGENT 7: Assembling document...")
+        self.plan = plan  # Store for use in table rendering
 
         title = plan.get("title", "").strip()
         if not title:
