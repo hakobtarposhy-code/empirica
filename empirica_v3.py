@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v2.0.0 - Complete Research Pipeline
+# EMPIRICA v1.5 - Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
@@ -27,6 +27,25 @@
 #          banned words list (drive/drives/driven etc), banned punctuation (em dash,
 #          semicolons, colons for drama), hyphens only, indicator codes banned from prose,
 #          proofreader overhauled with punctuation enforcement.
+# v2.1.0: Output-quality fixes - canonical facts block (identical numbers across
+#          all sections), real-country filter via WB metadata (no aggregates/
+#          territories inflating N), analysis-sample N not raw merge count,
+#          AI literature relevance filter (drops CO2/HIV/traffic noise),
+#          Roman-numeral duplicate-heading stripping, no-heading rule in prompts,
+#          data-driven intro (no hardcoded education/controls), source-aware Table 1 note.
+#
+# ── Renumbered to v1.4 per request. Latest additions in this build:
+# v1.4: OpenAI cross-model reviewer (Agent 8) - a second-layer check on a DIFFERENT
+#        model that flags AND auto-fixes number inconsistencies, hallucinated
+#        citations, internal contradictions, and math errors. Runs after the
+#        proofreader, before assembly. OPTIONAL: set OPENAI_API_KEY to enable;
+#        if unset, the pipeline skips it gracefully. pip install openai
+# v1.5: Output modes + Excel export. output_mode = "paper" (default),
+#        "policy_brief" (one-pager, stop-slop + mario-rules voice), or
+#        "social_media" (catchy LinkedIn post + simple shareable image).
+#        Excel export (data_and_results.xlsx) with data, model results,
+#        descriptive stats, and metadata sheets - runs for all modes.
+#        run_empirica now returns {"results":..., "outputs":{...paths}}.
 #          rough transition instructions, author-subordination enforcement,
 #          proofreader AI-cadence detection (monotone rhythm, smooth transitions,
 #          hedge stacking, evaluative filler), parenthetical aside encouragement
@@ -68,6 +87,13 @@ import matplotlib.ticker as mticker
 import anthropic
 
 try:
+    from openai import OpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+    print("⚠️  openai not installed — cross-model reviewer unavailable. pip install openai")
+
+try:
     from dbnomics import fetch_series as dbnomics_fetch
     HAS_DBNOMICS = True
 except ImportError:
@@ -81,6 +107,7 @@ warnings.filterwarnings("ignore")
 # CONFIGURATION
 # ============================================================================
 CLAUDE_MODEL = "claude-opus-4-6"                      # ← Opus 4.6
+OPENAI_MODEL = "gpt-4o"                               # cross-model reviewer (Agent 8)
 OUTPUT_DIR = "output"
 
 INDICATOR_FAMILIES = {
@@ -145,6 +172,43 @@ def ask_claude_json(system: str, user: str, max_tokens: int = 4000, temperature:
         raise ValueError(f"Could not parse JSON from Claude response:\n{raw[:500]}")
 
 
+# ============================================================================
+# OPENAI API HELPERS (cross-model reviewer - Agent 8)
+# ============================================================================
+def get_openai_client():
+    """Returns an OpenAI client, or None if unavailable/unconfigured.
+    The reviewer is OPTIONAL: if no key is set, the pipeline skips it gracefully."""
+    if not HAS_OPENAI:
+        return None
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    return OpenAI(api_key=api_key)
+
+
+def ask_openai_json(system: str, user: str, max_tokens: int = 4000, temperature: float = 0.2) -> dict:
+    """Call OpenAI and parse JSON. Returns {} on any failure so the pipeline never breaks."""
+    client = get_openai_client()
+    if client is None:
+        return {}
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content
+        return json.loads(raw)
+    except Exception as e:
+        print(f"    ⚠️  OpenAI reviewer call failed: {e}")
+        return {}
+
+
 def strip_markdown(text: str) -> str:
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
@@ -168,10 +232,27 @@ def strip_duplicate_heading(text: str, heading: str) -> str:
         return text
     first = lines[0].strip().lower()
     heading_clean = heading.strip().lower()
-    first_no_num = re.sub(r"^\d+[\.\)]\s*", "", first)
-    heading_no_num = re.sub(r"^\d+[\.\)]\s*", "", heading_clean)
+
+    # Strip leading numbering: Arabic (1.), Roman (I.), or letter (A.)
+    num_pattern = r"^([ivxlcdm]+|\d+|[a-z])[\.\)]\s*"
+    first_no_num = re.sub(num_pattern, "", first).strip()
+    heading_no_num = re.sub(num_pattern, "", heading_clean).strip()
+
+    # Direct match after stripping numbers
     if first_no_num == heading_no_num or first == heading_no_num:
         return "\n".join(lines[1:]).strip()
+
+    # Handle common heading variants (AI writes a richer heading than the section key)
+    # e.g. section "methodology" -> AI writes "Data and Methodology"
+    #      section "literature review" -> AI writes "Literature Review"
+    key_words = set(heading_no_num.split())
+    first_words = set(first_no_num.split())
+    # If the AI's first line is short (<=5 words) and shares the key noun, treat as heading
+    if len(first_no_num.split()) <= 5 and key_words & first_words:
+        # Only strip if the line contains no sentence-ending punctuation mid-text
+        if not re.search(r"[.!?]\s+\w", first_no_num) and len(first_no_num) < 50:
+            return "\n".join(lines[1:]).strip()
+
     return text
 
 
@@ -636,8 +717,39 @@ class WorldBankFetcher:
         "TLA", "TMN", "TSA", "TSS", "IBD", "IBT", "IDB",
     }
 
+    _real_countries = None  # cached set of ISO codes that are actual sovereign countries
+
+    @classmethod
+    def _get_real_countries(cls):
+        """Fetch the definitive set of real countries from World Bank metadata.
+        A real country has a region other than 'Aggregates' AND a capital city.
+        This excludes aggregates AND non-sovereign territories that inflate the count."""
+        if cls._real_countries is not None:
+            return cls._real_countries
+        real = set()
+        try:
+            resp = requests.get(
+                "https://api.worldbank.org/v2/country?format=json&per_page=400",
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if len(data) >= 2 and data[1]:
+                for c in data[1]:
+                    region = (c.get("region", {}) or {}).get("value", "")
+                    capital = c.get("capitalCity", "")
+                    code = c.get("id", "")
+                    # Real country: has a real region (not Aggregates) and a capital city
+                    if region and region != "Aggregates" and capital.strip():
+                        real.add(code)
+        except Exception as e:
+            print(f"    ⚠️  Could not fetch country metadata for filtering: {e}")
+        cls._real_countries = real
+        return real
+
     def fetch(self, indicator: str, start_year: int, end_year: int) -> pd.DataFrame:
         print(f"  📊 Fetching {indicator} ({start_year}-{end_year})...")
+        real_countries = self._get_real_countries()
         all_data = []
         page = 1
         while True:
@@ -669,7 +781,9 @@ class WorldBankFetcher:
                 value = record.get("value")
                 if value is not None:
                     cc = record.get("country", {}).get("id", "")
-                    if cc not in self.AGGREGATES:
+                    # Prefer the metadata-based real-country filter; fall back to hardcoded set
+                    is_real = (cc in real_countries) if real_countries else (cc not in self.AGGREGATES)
+                    if is_real:
                         all_data.append({
                             "country": record["country"]["value"],
                             "country_code": cc,
@@ -775,9 +889,9 @@ class DBnomicsFetcher:
 class SemanticScholarSearcher:
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
 
-    def search(self, query: str, max_results: int = 15) -> list:   # ← CHANGE 3: 15 default
+    def search(self, query: str, max_results: int = 15) -> list:
         papers = []
-        for attempt in range(3):
+        for attempt in range(2):  # 2 attempts max (was 3)
             try:
                 print(f"  📖 Semantic Scholar (attempt {attempt + 1}): {query}")
                 resp = requests.get(
@@ -786,15 +900,19 @@ class SemanticScholarSearcher:
                         "query": query, "limit": max_results,
                         "fields": "title,authors,year,journal,externalIds,abstract,citationCount",
                     },
-                    timeout=30,
+                    timeout=10,  # fail fast (was 30)
                 )
+                # If rate-limited, stop immediately instead of retrying (retries just get 429 again)
+                if resp.status_code == 429:
+                    print("    ⚠️  Semantic Scholar rate-limited (429). Skipping, PubMed will cover literature.")
+                    return []
                 resp.raise_for_status()
                 papers = resp.json().get("data", [])
                 if papers:
                     break
             except Exception as e:
                 print(f"    -> Attempt {attempt + 1} failed: {e}")
-                if attempt < 2:
+                if attempt < 1:
                     time.sleep(2)
                 papers = []
 
@@ -930,8 +1048,51 @@ class LiteratureSearcher:
             combined.append(article)
 
         combined.sort(key=lambda a: a.get("citations", 0), reverse=True)
-        print(f"  ✅ {len(combined)} unique articles found (target: 20+)")
+        print(f"  ✅ {len(combined)} unique articles found (before relevance filter)")
+
+        # --- AI RELEVANCE FILTER: drop papers unrelated to the hypothesis ---
+        combined = self._filter_relevant(combined, plan)
+        print(f"  ✅ {len(combined)} relevant articles kept")
         return combined
+
+    def _filter_relevant(self, articles: list, plan: dict) -> list:
+        """Use Claude to score each paper's relevance to the hypothesis and drop the irrelevant ones.
+        This removes the CO2/HIV/traffic-fatality noise that PubMed and broad SS queries pull in."""
+        if not articles:
+            return articles
+        # Build a compact list for scoring
+        listing = []
+        for i, a in enumerate(articles):
+            listing.append(f"{i}: {a.get('title','')} ({a.get('year','')}) - {a.get('journal','')}")
+        listing_str = "\n".join(listing)
+
+        try:
+            verdict = ask_claude_json(
+                system="""You are a research librarian screening papers for a literature review.
+Given a hypothesis and a numbered list of papers (title, year, journal), decide which papers are RELEVANT.
+A paper is RELEVANT only if it plausibly bears on the SAME economic relationship as the hypothesis, meaning it studies the same variables, the same mechanism, or a direct confounder/competing explanation.
+A paper is IRRELEVANT if it is about an unrelated outcome (e.g. HIV, traffic fatalities, PM2.5, disease burden, organic agriculture) that merely happens to mention one of the variables in passing, or is a government background note, or is off-topic.
+Be strict. A tangential mention of "GDP per capita" does NOT make a paper about disease burden relevant.
+Return JSON: {"relevant_indices": [list of integers for papers to KEEP]}""",
+                user=f"Hypothesis: {plan['statement']}\n\nPapers:\n{listing_str}\n\nReturn the indices of only the relevant papers.",
+                max_tokens=1000,
+            )
+            keep = set(verdict.get("relevant_indices", []))
+            if not keep:
+                # If the filter returns nothing, keep the top-cited half rather than losing everything
+                print("    ⚠️  Relevance filter returned no papers, keeping top-cited half as fallback")
+                return articles[: max(8, len(articles) // 2)]
+            filtered = [a for i, a in enumerate(articles) if i in keep]
+            dropped = [a.get("title", "")[:50] for i, a in enumerate(articles) if i not in keep]
+            for d in dropped:
+                print(f"    🗑️  Dropped irrelevant: {d}...")
+            # Guard against over-filtering: keep at least 8 papers if available
+            if len(filtered) < 8 and len(articles) >= 8:
+                return articles[:12]
+            return filtered
+        except Exception as e:
+            print(f"    ⚠️  Relevance filter failed ({e}), keeping all papers")
+            return articles
 
 
 # ============================================================================
@@ -1245,6 +1406,7 @@ Note: Blunt. No hedging. Two sentences where AI would write one long hedged one.
 - Never use rhetorical questions or address the reader directly.
 - Never open with "Conventional wisdom holds..." or any hook/framing device.
 - Never discuss channels or variables NOT measured in the dataset.
+- Never write a section heading or title. Do NOT start with "Introduction," "1. Introduction," "I. Introduction," "Literature Review," etc. The document assembler adds headings. Start directly with the first sentence of body text.
 - No markdown formatting. No #, **, *, `, $$.
 - Do NOT write a full paper. Write ONLY the section requested.
 
@@ -1385,7 +1547,10 @@ class PaperWriter:
                 "conclusion": 0.2, "policy_implications": 0.5,
             }
             temp = section_temps.get(name, 0.3)
-            raw = ask_claude(sys_p, usr_p, 3000, temperature=temp)  # per-section temperature
+            # Inject canonical facts into every section so numbers stay identical everywhere
+            facts_block = getattr(self, "facts", "")
+            sys_p_with_facts = sys_p + ("\n\n" + facts_block if facts_block else "")
+            raw = ask_claude(sys_p_with_facts, usr_p, 3000, temperature=temp)  # per-section temperature
             text = strip_markdown(raw)
             text = self._verify_citations(text)
             text = strip_duplicate_heading(text, name.replace("_", " "))
@@ -1401,6 +1566,7 @@ class PaperWriter:
 
         main_result = ols_c if ols_c and "error" not in ols_c else self.results.get("ols", {})
         fe_result = fe if fe and "error" not in fe else {}
+        ols_bivar = self.results.get("ols", {})
 
         # Advocacy block — empty string if no angle set
         adv = self.advocacy_instruction
@@ -1410,6 +1576,29 @@ class PaperWriter:
         x_code = self.plan.get('independent_var') or 'AMECO/' + self.plan.get('ameco_independent', {}).get('dataset', '?')
         y_code = self.plan.get('dependent_var') or 'AMECO/' + self.plan.get('ameco_dependent', {}).get('dataset', '?')
         controls_list = ', '.join(c['label'] for c in self.plan.get('control_vars', []))
+
+        # ── CANONICAL FACTS BLOCK ──
+        # Every section receives THIS identical block. Do not let the model re-derive numbers.
+        # The analysis N (from the regression) is the sample the paper describes, NOT the raw merge count.
+        analysis_n = main_result.get('n_obs') or ols_bivar.get('n_obs') or desc.get('n_obs', 'N/A')
+        fe_n = fe_result.get('n_obs', analysis_n)
+        n_countries = fe_result.get('n_countries') or desc.get('n_countries', 'N/A')
+
+        def _fmt(v, nd=2):
+            try:
+                return f"{float(v):.{nd}f}"
+            except (TypeError, ValueError):
+                return "N/A"
+
+        corr = self.results.get("correlation", {})
+        self.facts = f"""CANONICAL NUMBERS (use these EXACT values everywhere. Do NOT recompute, round differently, or invent):
+- Sample: {analysis_n} country-year observations, {n_countries} countries, {desc.get('year_range','N/A')}
+- Bivariate OLS coefficient: {_fmt(ols_bivar.get('coefficient'))} (p = {_fmt(ols_bivar.get('p_value'),3)}, R-squared = {_fmt(ols_bivar.get('r_squared'),3)})
+- OLS with controls coefficient: {_fmt(main_result.get('coefficient'))} (SE = {_fmt(main_result.get('std_error'),3)}, p = {_fmt(main_result.get('p_value'),3)}, R-squared = {_fmt(main_result.get('r_squared'),3)})
+- Country fixed-effects coefficient: {_fmt(fe_result.get('coefficient'))} (SE = {_fmt(fe_result.get('std_error'),3)}, p = {_fmt(fe_result.get('p_value'),3)}, within R-squared = {_fmt(fe_result.get('r_squared_within'),4)})
+- Pearson r = {_fmt(corr.get('pearson_r'),3)} (p = {_fmt(corr.get('pearson_p'),3)}), Spearman rho = {_fmt(corr.get('spearman_r'),3)} (p = {_fmt(corr.get('spearman_p'),3)})
+- Controls used (EXACTLY these, name them consistently): {controls_list}
+RULE: When you state a coefficient, use the value above to 2 decimals. When you state the sample size, use {analysis_n} observations and {n_countries} countries. Never write a different N in different sections."""
 
         return {
             "abstract": (
@@ -1473,13 +1662,13 @@ IMF INTRODUCTION RULES:
 Open with the key finding as a bold declarative claim. Attach the number immediately. Pattern: "Higher education spending as a share of GDP is not associated with faster economic growth. In a panel of N countries over YEARS, the within-country coefficient is B (p < VALUE), and the association grows more negative after controlling for country fixed effects." Do NOT hedge.
 
 2. POLICY CONTEXT (3-4 sentences):
-State the policy stakes with numbers. How much do governments spend on education globally (cite ranges or averages)? What targets do international organizations recommend? Then the "despite" or "however": despite these commitments, the cross-country evidence on whether spending translates to growth remains contested. Cite 2-3 studies from the verified list with their specific findings and sample sizes.
+State the policy stakes with numbers relevant to THIS hypothesis (not education unless the topic is education). What is at stake for policymakers if the relationship holds or fails? Then the "despite" or "however": despite common assumptions, the cross-country evidence remains contested. Cite 2-3 studies from the verified list with their specific findings and sample sizes.
 
 3. DATA AND METHOD (3-4 sentences):
-State specifics: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}, World Bank World Development Indicators. State the identification strategy: pooled OLS with five controls, then country fixed effects that compare each country only to itself over time. State what the fixed-effects estimator strips out: geography, colonial history, institutional quality, and all other permanent country characteristics.
+State specifics using the CANONICAL NUMBERS block: the exact sample size and country count, the year range, and the data source ({data_source_name}). State the identification strategy: pooled OLS with the control variables listed in the canonical block, then country fixed effects that compare each country only to itself over time. State what the fixed-effects estimator strips out: geography, colonial history, institutional quality, and all other permanent country characteristics.
 
 4. RESULT PROGRESSION (2-3 sentences):
-State the coefficient progression with specific numbers: from bivariate OLS to controlled OLS to fixed effects. State what happens at each step: the coefficient grows MORE negative, suggesting permanent country characteristics were masking, not driving, the association.
+State the coefficient progression with the specific numbers from the canonical block: bivariate OLS, then controlled OLS, then fixed effects. Describe what actually happens at each step based on those numbers (does the coefficient grow, shrink, or flip?). Do not assume a direction, read it from the canonical numbers.
 
 5. ROADMAP (1 sentence):
 "Section 2 reviews the cross-country evidence. Section 3 describes data and methods. Section 4 presents results. Section 5 discusses identification threats. Section 6 concludes."
@@ -1746,6 +1935,100 @@ CRITICAL CONSTRAINTS:
 
 
 # ============================================================================
+# AGENT 8: CROSS-MODEL REVIEWER (OpenAI - flags AND auto-fixes)
+# ============================================================================
+def openai_review_and_fix(sections: dict, plan: dict, results: dict,
+                          literature: list, facts_block: str = "") -> dict:
+    """A second-layer reviewer, run on a DIFFERENT model (OpenAI) so it catches
+    mistakes the writing model is blind to. It checks each section against the real
+    numbers and the verified citation list, then returns corrected text.
+
+    OPTIONAL: if OPENAI_API_KEY is not set (or openai not installed), this returns
+    the sections unchanged and prints a notice. The pipeline never breaks."""
+    client = get_openai_client()
+    if client is None:
+        if not HAS_OPENAI:
+            print("\n🧐 AGENT 8: Skipped (openai package not installed).")
+        else:
+            print("\n🧐 AGENT 8: Skipped (OPENAI_API_KEY not set).")
+        return sections
+
+    print("\n🧐 AGENT 8: Cross-model review (OpenAI) - checking and fixing...")
+
+    # Build the verified citation list for the reviewer
+    cite_lines = []
+    for a in literature:
+        cite_lines.append(f"- {a.get('authors_short','')} ({a.get('year','')})")
+    verified_cites = "\n".join(cite_lines) if cite_lines else "(none)"
+
+    full_text = "\n\n".join(
+        f"[{name.upper()}]\n{text}" for name, text in sections.items() if text
+    )
+
+    system = """You are a senior peer reviewer for an economics journal, reviewing a paper drafted by another AI.
+Your job is to catch and FIX factual and consistency errors. You do NOT rewrite for style. You fix mistakes.
+
+Check for these specific problems and correct them in place:
+1. NUMBER CONSISTENCY: Every coefficient, p-value, R-squared, sample size (N), and country count must match the CANONICAL NUMBERS provided. If a section states a different number, correct it to the canonical value.
+2. HALLUCINATED CITATIONS: The paper may ONLY cite papers in the VERIFIED CITATIONS list. If a citation (Author, Year) is not in that list, remove it. Do not invent replacements.
+3. INTERNAL CONTRADICTIONS: If two sections make incompatible claims (e.g. different control variables, different sample sizes, opposite signs), reconcile them to match the canonical numbers and the stated controls.
+4. UNSUPPORTED CLAIMS: If the text claims a mechanism or variable that is not in the data or controls, soften or remove it.
+5. MATH/LOGIC ERRORS: If a stated percentage change, ratio, or comparison is arithmetically wrong given the canonical numbers, fix it.
+
+Return JSON with this exact shape:
+{
+  "issues_found": [
+    {"section": "results", "problem": "stated N as 8505 but canonical is 4654", "severity": "high"}
+  ],
+  "corrected_sections": {
+    "abstract": "full corrected text of abstract...",
+    "introduction": "full corrected text...",
+    ... (include ONLY sections you changed; omit unchanged sections)
+  }
+}
+
+Rules for corrected text:
+- Return the FULL corrected text for any section you change, not a diff.
+- Do NOT add markdown. Do NOT add headings. Keep [EQ]...[/EQ] markers intact.
+- Do NOT change the meaning or style beyond fixing the specific errors.
+- If a section is already correct, do not include it in corrected_sections."""
+
+    user = f"""Hypothesis: {plan.get('statement','')}
+
+{facts_block}
+
+VERIFIED CITATIONS (the paper may cite ONLY these):
+{verified_cites}
+
+PAPER SECTIONS:
+{full_text}
+
+Review every section. Fix number inconsistencies, hallucinated citations, contradictions, and math errors. Return the JSON."""
+
+    verdict = ask_openai_json(system, user, max_tokens=8000, temperature=0.1)
+    if not verdict:
+        print("  ⚠️  Reviewer returned nothing, keeping original sections.")
+        return sections
+
+    issues = verdict.get("issues_found", [])
+    if issues:
+        print(f"  🔎 {len(issues)} issue(s) found:")
+        for it in issues:
+            sev = it.get("severity", "?")
+            print(f"    [{sev}] {it.get('section','?')}: {it.get('problem','')}")
+    else:
+        print("  ✅ No issues found.")
+
+    corrected = verdict.get("corrected_sections", {})
+    fixed = dict(sections)
+    for name, new_text in corrected.items():
+        if name in fixed and isinstance(new_text, str) and len(new_text.strip()) > 40:
+            fixed[name] = strip_markdown(new_text.strip())
+            print(f"  ✏️  Fixed: {name}")
+    return fixed
+
+
+# ============================================================================
 # AGENT 7: DOCUMENT ASSEMBLER (Code - with tables and charts)
 # ============================================================================
 class DocumentAssembler:
@@ -1981,8 +2264,9 @@ class DocumentAssembler:
             self._add_table(doc, headers, rows, [1.8, 0.6, 0.9, 0.9, 0.9, 0.9])
 
         # Add note below table
+        source_label = "European Commission AMECO database" if getattr(self, "plan", {}).get("_actual_source") == "ameco" else "World Bank World Development Indicators"
         note_p = doc.add_paragraph()
-        note_run = note_p.add_run(f"Note: {desc.get('n_countries', 'N/A')} countries, {desc.get('year_range', 'N/A')}. Source: World Bank/AMECO.")
+        note_run = note_p.add_run(f"Note: {desc.get('n_countries', 'N/A')} countries, {desc.get('year_range', 'N/A')}. Source: {source_label}.")
         note_run.font.size = Pt(8)
         note_run.font.italic = True
         note_run.font.name = "Times New Roman"
@@ -2416,14 +2700,298 @@ print("Done.")
 
 
 # ============================================================================
+# EXCEL EXPORTER - underlying dataset + model results
+# ============================================================================
+def export_to_excel(df, results, plan, output_path):
+    """Write the analysis dataset and all model results to a multi-sheet .xlsx.
+    Sheet 1: the cleaned panel used in the regressions.
+    Sheet 2: regression results (every specification).
+    Sheet 3: descriptive statistics.
+    Sheet 4: metadata (hypothesis, variables, source, controls)."""
+    print(f"  📊 Excel export: {output_path}")
+    try:
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            # Sheet 1: the actual data
+            data_out = df.copy()
+            rename_map = {"x": plan.get("x_label", "X"), "y": plan.get("y_label", "Y")}
+            for c in list(data_out.columns):
+                if c.startswith("control_"):
+                    rename_map[c] = c.replace("control_", "").replace("_", ".")
+            data_out = data_out.rename(columns=rename_map)
+            data_out.to_excel(writer, sheet_name="Data", index=False)
+
+            # Sheet 2: regression results
+            reg_rows = []
+            for spec_name, key in [("Bivariate OLS", "ols"),
+                                    ("OLS + Controls", "ols_controls"),
+                                    ("Country Fixed Effects", "fixed_effects")]:
+                r = results.get(key, {})
+                if r and "error" not in r:
+                    reg_rows.append({
+                        "Specification": spec_name,
+                        "Coefficient": r.get("coefficient", ""),
+                        "Std Error": r.get("std_error", ""),
+                        "p-value": r.get("p_value", ""),
+                        "R-squared": r.get("r_squared", r.get("r_squared_within", "")),
+                        "N": r.get("n_obs", ""),
+                        "Significant (p<0.05)": r.get("significant", ""),
+                    })
+            corr = results.get("correlation", {})
+            if corr:
+                reg_rows.append({
+                    "Specification": "Pearson correlation",
+                    "Coefficient": corr.get("pearson_r", ""),
+                    "p-value": corr.get("pearson_p", ""),
+                })
+                reg_rows.append({
+                    "Specification": "Spearman correlation",
+                    "Coefficient": corr.get("spearman_r", ""),
+                    "p-value": corr.get("spearman_p", ""),
+                })
+            pd.DataFrame(reg_rows).to_excel(writer, sheet_name="Model Results", index=False)
+
+            # Sheet 3: descriptive statistics
+            desc = results.get("descriptive", {})
+            desc_rows = []
+            for label, statkey in [(plan.get("x_label", "X"), "x_stats"),
+                                    (plan.get("y_label", "Y"), "y_stats")]:
+                s = desc.get(statkey, {})
+                if s:
+                    desc_rows.append({"Variable": label, **s})
+            for k, v in desc.items():
+                if k.startswith("ctrl_") and k.endswith("_stats") and isinstance(v, dict):
+                    name = k.replace("ctrl_", "").replace("_stats", "").replace("_", " ").title()
+                    desc_rows.append({"Variable": name, **v})
+            pd.DataFrame(desc_rows).to_excel(writer, sheet_name="Descriptive Stats", index=False)
+
+            # Sheet 4: metadata
+            meta = [
+                {"Field": "Hypothesis", "Value": plan.get("statement", "")},
+                {"Field": "Independent variable (X)", "Value": plan.get("x_label", "")},
+                {"Field": "Dependent variable (Y)", "Value": plan.get("y_label", "")},
+                {"Field": "Data source", "Value": "AMECO" if plan.get("_actual_source") == "ameco" else "World Bank WDI"},
+                {"Field": "Year range", "Value": desc.get("year_range", "")},
+                {"Field": "Countries", "Value": desc.get("n_countries", "")},
+                {"Field": "Observations", "Value": desc.get("n_obs", "")},
+            ]
+            for c in plan.get("control_vars", []):
+                meta.append({"Field": "Control", "Value": f"{c.get('label','')} ({c.get('code','')})"})
+            pd.DataFrame(meta).to_excel(writer, sheet_name="Metadata", index=False)
+
+        print(f"  ✅ Excel saved: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"  ⚠️  Excel export failed: {e}")
+        return ""
+
+
+# ============================================================================
+# ALTERNATIVE OUTPUT MODE 1: POLICY ONE-PAGER (voice: stop-slop + mario-rules)
+# ============================================================================
+POLICY_VOICE = """VOICE AND STYLE RULES (follow strictly, these define the house style):
+
+STOP-SLOP RULES:
+- Cut filler. No throat-clearing openers ("In today's world," "It is important to note"). No emphasis crutches. No adverbs.
+- Active voice only. Every sentence has a human subject doing something. No inanimate abstractions acting ("the policy achieves," "the data reveals").
+- Be specific. Name the exact thing. No vague declaratives ("the reasons are structural"). No lazy extremes ("every," "always," "never").
+- Put the reader in the room. "You" beats "people." Concrete beats abstract.
+- Vary rhythm. Mix sentence lengths. Two items beat three. No em dashes.
+- Trust the reader. State facts directly. Skip softening and hand-holding.
+- No pull-quotes. If a line sounds quotable-for-its-own-sake, rewrite it.
+
+MARIO-RULES (policy writing lessons):
+- Know the objective. This is an influence document, not an academic paper. Every sentence serves the policy message.
+- Word choice is strategic. "Risks" creates alarm while staying defensible. "May" lets readers off the hook, avoid it when the data supports a firm claim.
+- Present components before the aggregate. Lead with the specific number, let the total land as a conclusion.
+- Use "from X to Y" framing for any change. Never "increased by 3 points" without the baseline and endpoint.
+- Do not disclaim your results into irrelevance. No "back-of-the-envelope," no "purely directional." State what the numbers are: internally consistent and informative.
+- Short sentences. Use periods. If you would not say it aloud in conversation, rewrite it.
+- Specify the subject. Not "they react to prices", say who reacts.
+- No jargon without unpacking. If a phrase needs prior expertise to parse, rewrite in plain language.
+- Commit to claims. Remove weak qualifiers when the data supports a definitive statement.
+
+- NO em dashes. NO semicolons for effect. NO colons for drama. Hyphens only."""
+
+
+def write_policy_brief(plan, results, interpretation, literature,
+                        advocacy_angle="", advocacy_temperature=1):
+    """Generate a one-page policy brief instead of a full academic paper."""
+    print("\n📝 Writing POLICY BRIEF (one-pager)...")
+
+    desc = results.get("descriptive", {})
+    ols_c = results.get("ols_controls", {}) or results.get("ols", {})
+    fe = results.get("fixed_effects", {})
+    adv = build_advocacy_instruction(advocacy_angle, advocacy_temperature)
+
+    cite_lines = [f"- {a['authors_short']} ({a['year']}): {a['title']}" for a in literature[:12]]
+    cites = "\n".join(cite_lines) if cite_lines else "(no external citations)"
+
+    system = f"You are a policy analyst at a think tank writing a one-page brief for busy policymakers and their advisors. It must be read and understood in two minutes. {POLICY_VOICE}{adv}"
+
+    user = f"""Hypothesis: {plan['statement']}
+Finding: {interpretation.get('main_finding','N/A')}
+X: {plan['x_label']}, Y: {plan['y_label']}
+OLS+controls coefficient: {ols_c.get('coefficient','N/A')} (p={ols_c.get('p_value','N/A')})
+Fixed-effects coefficient: {fe.get('coefficient','N/A')} (p={fe.get('p_value','N/A')})
+Sample: {desc.get('n_obs','N/A')} observations, {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
+Evidence strength: {interpretation.get('strength','N/A')}
+Available evidence base:
+{cites}
+
+Write a ONE-PAGE policy brief with these labeled parts (use the labels as short headers on their own line):
+
+BOTTOM LINE
+One or two sentences. The single most important takeaway, with the key number. This is what a minister reads if they read nothing else.
+
+WHAT WE FIND
+Three or four short sentences. The specific results in plain language, each with a number, translated into real-world terms. Present the specific findings before any aggregate claim.
+
+WHY IT MATTERS
+Three or four short sentences. The policy stakes. What decision does this evidence inform? What happens if policymakers get it wrong?
+
+WHAT TO DO
+Two or three concrete, specific recommendations. Each is an action, not a platitude. Ground each in what the data actually shows. No "more research is needed."
+
+THE CAVEAT
+One sentence. The single most important limitation, stated honestly but without destroying confidence in the finding.
+
+Total length: about 400 words. Tight. Every sentence earns its place."""
+
+    raw = ask_claude(system, user, max_tokens=2000, temperature=0.4)
+    text = strip_markdown(raw)
+    return {"policy_brief": text}
+
+
+# ============================================================================
+# ALTERNATIVE OUTPUT MODE 2: SOCIAL MEDIA POST (catchy, LinkedIn voice) + image
+# ============================================================================
+SOCIAL_VOICE = """VOICE FOR SOCIAL MEDIA (LinkedIn / policy-adjacent audience):
+
+- Open with a hook that creates tension or surprise. A contrast, a counterintuitive number, a "here is the gap between what we say and what we do" opener.
+- Use concrete, specific numbers early. Real figures, real comparisons a reader can picture.
+- Short lines. Lots of white space. One idea per line or short paragraph.
+- Write like a sharp human with a point of view, not a press release. Confident, direct, a little provocative.
+- Land a clear takeaway at the end. The reader should know exactly what you want them to think.
+- No corporate hedging. No "it is worth noting." No academic throat-clearing.
+- NO em dashes. NO semicolons for effect. Hyphens only.
+- It is fine to use a couple of relevant hashtags at natural points, not a wall of them at the end.
+
+EXAMPLE OF THE TARGET VOICE (a real post by the author, match this energy and structure):
+---
+Europe asks consumers to make the greener choice, while its transport system sometimes charges them extra for doing so.
+
+Consider a weekend trip from Munich to Paris. The train costs 64% more than the flight:
+
+ - Return flight: 182 euros
+ - Return train: 299 euros
+
+Train is the most greenhouse-gas-efficient form of motorised passenger transport. Passenger aviation ranks among the least efficient.
+
+As a result, sustainable travel turns into a luxury for those who can afford the premium.
+
+Governments can publish emissions figures and appeal to personal responsibility, yet many travellers will save money and choose the plane.
+---
+Match that: a clean hook, a hard number contrast, a short evidence line, a pointed conclusion."""
+
+
+def write_social_post(plan, results, interpretation, output_dir):
+    """Generate a catchy social media post plus a simple, clean, non-AI-looking chart image."""
+    print("\n📱 Writing SOCIAL MEDIA POST + image...")
+
+    desc = results.get("descriptive", {})
+    ols_c = results.get("ols_controls", {}) or results.get("ols", {})
+    fe = results.get("fixed_effects", {})
+
+    system = f"You are a researcher who writes viral, sharp LinkedIn posts about economic findings. {SOCIAL_VOICE}"
+    user = f"""Finding: {interpretation.get('main_finding','N/A')}
+Hypothesis: {plan['statement']}
+X: {plan['x_label']}, Y: {plan['y_label']}
+Key number (fixed-effects coefficient): {fe.get('coefficient', ols_c.get('coefficient','N/A'))}
+Sample: {desc.get('n_countries','N/A')} countries, {desc.get('year_range','N/A')}
+Evidence strength: {interpretation.get('strength','N/A')}
+
+Write ONE LinkedIn post (about 120-180 words) that turns this finding into something a policy audience would stop scrolling for.
+- Open with a hook.
+- Include the concrete numbers.
+- Land a clear, pointed takeaway.
+- Add 2-3 relevant hashtags placed naturally.
+Do not exaggerate beyond what the finding supports. If the effect is weak, the hook can be about how the intuitive story does not hold up."""
+
+    raw = ask_claude(system, user, max_tokens=1200, temperature=0.7)
+    post_text = strip_markdown(raw)
+
+    # Build a simple, clean chart image (deliberately minimal, not "AI-generated" looking)
+    image_path = ""
+    try:
+        image_path = _make_social_image(plan, results, interpretation, output_dir)
+    except Exception as e:
+        print(f"  ⚠️  Social image failed: {e}")
+
+    return {"social_post": post_text}, image_path
+
+
+def _make_social_image(plan, results, interpretation, output_dir):
+    """A clean, minimal single-stat or comparison graphic for sharing. Deliberately simple."""
+    ols_c = results.get("ols_controls", {}) or results.get("ols", {})
+    fe = results.get("fixed_effects", {})
+    coef = fe.get("coefficient", ols_c.get("coefficient"))
+    desc = results.get("descriptive", {})
+
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
+    })
+    fig, ax = plt.subplots(figsize=(6, 6))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ax.axis("off")
+
+    direction = "positive" if (coef is not None and coef > 0) else "negative"
+    headline_color = "#2A9D8F" if direction == "positive" else "#E63946"
+
+    # Big number
+    coef_str = f"{coef:+.2f}" if coef is not None else "N/A"
+    ax.text(0.5, 0.72, coef_str, ha="center", va="center",
+            fontsize=72, fontweight="bold", color=headline_color, transform=ax.transAxes)
+    # Relationship label
+    rel = f"Effect of {plan.get('x_label','X')}\non {plan.get('y_label','Y')}"
+    ax.text(0.5, 0.50, rel, ha="center", va="center",
+            fontsize=15, color="#264653", transform=ax.transAxes, wrap=True)
+    # Sub-line: sample
+    sub = f"{desc.get('n_countries','')} countries, {desc.get('year_range','')}"
+    ax.text(0.5, 0.36, sub, ha="center", va="center",
+            fontsize=11, color="#888888", transform=ax.transAxes)
+    # Strength tag
+    strength = interpretation.get("strength", "").upper()
+    if strength:
+        ax.text(0.5, 0.20, f"Evidence: {strength}", ha="center", va="center",
+                fontsize=12, fontweight="bold", color="#264653", transform=ax.transAxes)
+
+    path = os.path.join(output_dir, "social_image.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print(f"  ✅ Social image saved: {path}")
+    return path
+
+
+# ============================================================================
 # MAIN PIPELINE
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
-                 advocacy_angle: str = "", advocacy_temperature: int = 1):
+                 advocacy_angle: str = "", advocacy_temperature: int = 1,
+                 output_mode: str = "paper", export_excel: bool = True):
+    """
+    output_mode:
+      "paper"        - full academic paper (default)
+      "policy_brief" - one-page policy brief (stop-slop + mario-rules voice)
+      "social_media" - catchy LinkedIn-style post + a simple shareable image
+    export_excel: also write the dataset + model results to an .xlsx file
+    """
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.8.0")
+    print("  EMPIRICA v1.5")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
+    print(f"  Output mode: {output_mode}")
     if advocacy_angle:
         print(f"  Advocacy: {advocacy_angle} (temperature: {advocacy_temperature}/10)")
     print("=" * 60)
@@ -2523,32 +3091,114 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     # Agent 5: Interpret (extended thinking)
     interpretation = ai_interpret_results(results, plan, advocacy_angle, advocacy_temperature)
 
-    # Agent 6: Write (no extended thinking — just good prompts)
-    writer = PaperWriter(plan, results, interpretation, literature, advocacy_angle, advocacy_temperature)
-    sections = writer.write_all()
+    # Excel export (all modes, if requested) - the underlying data + model results
+    excel_path = ""
+    if export_excel:
+        excel_path = export_to_excel(df, results, plan, os.path.join(output_dir, "data_and_results.xlsx"))
 
-    # Agent 6b: Proofread (no extended thinking)
-    sections = ai_proofread(sections)
-
-    # Agent 7: Assemble
-    paper_path = os.path.join(output_dir, "paper.docx")
-    assembler = DocumentAssembler()
-    assembler.create(plan, sections, results, literature, controls_fetched, paper_path,
-                     scatterplot_path=scatterplot_path, coeff_plot_path=coeff_plot_path)
-
+    # Reproduction script (all modes)
     repro_path = os.path.join(output_dir, "reproduce.py")
     ReproductionScriptGenerator().generate(plan, review, results, repro_path)
 
-    print("\n" + "=" * 60)
-    print("  ✅ EMPIRICA v1.8.0 COMPLETE")
-    print("=" * 60)
-    print(f"  Paper:  {paper_path}")
-    print(f"  Code:   {repro_path}")
-    main_r = results.get("ols_controls", results.get("ols", {}))
-    print(f"  Result: B={main_r.get('coefficient','N/A')}, p={main_r.get('p_value','N/A')}, R2={main_r.get('r_squared','N/A')}")
-    print("=" * 60)
+    outputs = {"reproduce": repro_path, "excel": excel_path,
+               "scatterplot": scatterplot_path, "coefficients": coeff_plot_path}
 
-    return results
+    # ── OUTPUT MODE BRANCH ──
+    if output_mode == "policy_brief":
+        brief = write_policy_brief(plan, results, interpretation, literature,
+                                   advocacy_angle, advocacy_temperature)
+        brief_path = os.path.join(output_dir, "policy_brief.docx")
+        _save_simple_docx(brief.get("policy_brief", ""), plan.get("title", "Policy Brief"), brief_path)
+        outputs["policy_brief"] = brief_path
+        print("\n" + "=" * 60)
+        print("  ✅ EMPIRICA v1.5 COMPLETE (policy brief)")
+        print("=" * 60)
+        print(f"  Brief:  {brief_path}")
+        print(f"  Excel:  {excel_path}")
+        print("=" * 60)
+
+    elif output_mode == "social_media":
+        social, social_img = write_social_post(plan, results, interpretation, output_dir)
+        social_path = os.path.join(output_dir, "social_post.txt")
+        with open(social_path, "w") as f:
+            f.write(social.get("social_post", ""))
+        outputs["social_post"] = social_path
+        outputs["social_image"] = social_img
+        print("\n" + "=" * 60)
+        print("  ✅ EMPIRICA v1.5 COMPLETE (social media)")
+        print("=" * 60)
+        print(f"  Post:   {social_path}")
+        print(f"  Image:  {social_img}")
+        print(f"  Excel:  {excel_path}")
+        print("=" * 60)
+
+    else:  # "paper" (default)
+        writer = PaperWriter(plan, results, interpretation, literature, advocacy_angle, advocacy_temperature)
+        sections = writer.write_all()
+        sections = ai_proofread(sections)
+        sections = openai_review_and_fix(
+            sections, plan, results, literature,
+            facts_block=getattr(writer, "facts", ""),
+        )
+        paper_path = os.path.join(output_dir, "paper.docx")
+        assembler = DocumentAssembler()
+        assembler.create(plan, sections, results, literature, controls_fetched, paper_path,
+                         scatterplot_path=scatterplot_path, coeff_plot_path=coeff_plot_path)
+        outputs["paper"] = paper_path
+        print("\n" + "=" * 60)
+        print("  ✅ EMPIRICA v1.5 COMPLETE")
+        print("=" * 60)
+        print(f"  Paper:  {paper_path}")
+        print(f"  Excel:  {excel_path}")
+        print(f"  Code:   {repro_path}")
+        main_r = results.get("ols_controls", results.get("ols", {}))
+        print(f"  Result: B={main_r.get('coefficient','N/A')}, p={main_r.get('p_value','N/A')}, R2={main_r.get('r_squared','N/A')}")
+        print("=" * 60)
+
+    return {"results": results, "outputs": outputs}
+
+
+def _save_simple_docx(text, title, output_path):
+    """Save a plain text block (policy brief) as a clean one-page Word doc."""
+    doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
+    style = doc.styles["Normal"]
+    style.font.name = "Times New Roman"
+    style.font.size = Pt(11)
+    style.paragraph_format.line_spacing = 1.15
+
+    # Title
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(title)
+    r.font.size = Pt(15)
+    r.font.bold = True
+    r.font.name = "Times New Roman"
+    doc.add_paragraph("")
+
+    # Known section labels get bolded as mini-headers
+    labels = {"BOTTOM LINE", "WHAT WE FIND", "WHY IT MATTERS", "WHAT TO DO", "THE CAVEAT"}
+    for block in text.split("\n"):
+        block = block.strip()
+        if not block:
+            continue
+        if block.upper() in labels or block.rstrip(":").upper() in labels:
+            pp = doc.add_paragraph()
+            pp.paragraph_format.space_before = Pt(8)
+            run = pp.add_run(block.rstrip(":"))
+            run.font.bold = True
+            run.font.size = Pt(11)
+            run.font.name = "Times New Roman"
+        else:
+            doc.add_paragraph(block)
+
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+    doc.save(output_path)
+    print(f"  ✅ Policy brief saved: {output_path}")
 
 
 # ============================================================================
