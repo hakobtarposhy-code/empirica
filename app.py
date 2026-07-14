@@ -1733,7 +1733,7 @@ if not run_button or not hypothesis.strip():
 <div class="preview-card-stat"><strong>127</strong> countries</div>
 <div class="preview-card-stat"><strong>4,100</strong> words</div>
 <div class="preview-card-stat"><strong>2m 14s</strong> to generate</div>
-</div>
+</div> 
 </div>
 </div>""", unsafe_allow_html=True)
 
