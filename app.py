@@ -17,6 +17,55 @@ import zipfile
 st.set_page_config(page_title="Empirica", page_icon="🎓", layout="centered", initial_sidebar_state="collapsed")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PASSWORD GATE — blocks all access until the shared password is entered.
+# The password lives in Streamlit secrets as APP_PASSWORD (never in code).
+# If no APP_PASSWORD is set, the gate is disabled (open access) so local dev works.
+# ═══════════════════════════════════════════════════════════════════════════════
+def _check_password():
+    try:
+        expected = st.secrets["APP_PASSWORD"]
+    except Exception:
+        expected = os.environ.get("APP_PASSWORD", "")
+    # No password configured → gate disabled
+    if not expected:
+        return True
+    # Already authenticated this session
+    if st.session_state.get("_authed"):
+        return True
+
+    # Minimal, centered login screen
+    st.markdown("""
+    <style>
+      #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+      .gate-wrap { max-width: 380px; margin: 6rem auto 0 auto; text-align: center;
+                   font-family: 'Inter', -apple-system, sans-serif; }
+      .gate-logo { font-weight: 700; font-size: 1.6rem; color: #0F172A;
+                   letter-spacing: -0.03em; margin-bottom: 0.3rem; }
+      .gate-sub { color: #94A3B8; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    </style>
+    <div class="gate-wrap">
+      <div class="gate-logo">empirica</div>
+      <div class="gate-sub">Enter the access password to continue</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        pw = st.text_input("Password", type="password", label_visibility="collapsed",
+                           placeholder="Password", key="_pw_input")
+        if st.button("Enter", use_container_width=True, key="_pw_btn"):
+            if pw == expected:
+                st.session_state["_authed"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+    return False
+
+if not _check_password():
+    st.stop()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — ported from React/Tailwind
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
@@ -1420,7 +1469,7 @@ _pill_html = f"""
 </script>
 """
 
-components.html(_pill_html, height=220, scrolling=False)
+components.html(_pill_html, height=110 if not _show else 210, scrolling=False)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGES + CONSOLE LABELS
@@ -1733,7 +1782,7 @@ if not run_button or not hypothesis.strip():
 <div class="preview-card-stat"><strong>127</strong> countries</div>
 <div class="preview-card-stat"><strong>4,100</strong> words</div>
 <div class="preview-card-stat"><strong>2m 14s</strong> to generate</div>
-</div> 
+</div>
 </div>
 </div>""", unsafe_allow_html=True)
 
