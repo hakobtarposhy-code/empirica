@@ -1,5 +1,5 @@
 """
-Empirica — Streamlit App (v1.3.0)
+Empirica — Streamlit App (v1.5)
 Faithful port of the React landing page design.
 """
 
@@ -984,6 +984,17 @@ if not api_key:
         if not api_key:
             st.warning("Add your API key to get started")
 
+# OpenAI key (optional) - powers the cross-model reviewer (Agent 8)
+openai_key = None
+try:
+    openai_key = st.secrets["OPENAI_API_KEY"]
+except Exception:
+    pass
+if not openai_key:
+    openai_key = os.environ.get("OPENAI_API_KEY")
+if openai_key:
+    os.environ["OPENAI_API_KEY"] = openai_key
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1012,6 +1023,21 @@ st.markdown("""
 
 # ── Real Streamlit widgets (hidden off-screen, but fully functional) ──
 hypothesis = st.text_input("h", label_visibility="collapsed", key="pill_hyp")
+
+# Output mode selector
+_mode_label = st.radio(
+    "Output format",
+    ["📄 Academic paper", "📋 Policy brief (one-pager)", "📱 Social media post"],
+    horizontal=True,
+    key="output_mode_radio",
+)
+_MODE_MAP = {
+    "📄 Academic paper": "paper",
+    "📋 Policy brief (one-pager)": "policy_brief",
+    "📱 Social media post": "social_media",
+}
+output_mode = _MODE_MAP.get(_mode_label, "paper")
+export_excel = st.checkbox("Also export data + results to Excel", value=True, key="excel_toggle")
 
 if st.button("g", key="pill_gear"):
     st.session_state.show_framing = not st.session_state.show_framing
@@ -1428,6 +1454,8 @@ if run_button:
                 hypothesis,
                 advocacy_angle=advocacy_angle.strip() if advocacy_angle else "",
                 advocacy_temperature=advocacy_temperature if advocacy_angle.strip() else 1,
+                output_mode=output_mode,
+                export_excel=export_excel,
             )
         except Exception as e:
             result_box["error"] = str(e)
@@ -1491,7 +1519,7 @@ if run_button:
         console_html = f'<div class="console-wrap">'
         console_html += '<div class="console-header"><div class="console-header-left">'
         console_html += '<div class="console-engine-icon">E</div>'
-        console_html += f'<div><div class="console-engine-title">Empirica Engine v1.3.0</div>'
+        console_html += f'<div><div class="console-engine-title">Empirica Engine v1.5</div>'
         console_html += f'<div class="console-engine-hyp">Analyzing: &quot;{hyp_short}&quot;</div></div>'
         console_html += '</div></div>'
         console_html += '<div class="console-body">'
@@ -1519,32 +1547,73 @@ if run_button:
                 st.code(log_text, language="text")
         st.info("Check your API key and credits at console.anthropic.com")
     else:
-        st.success("Paper generated.")
+        _success_labels = {
+            "paper": "Paper generated.",
+            "policy_brief": "Policy brief generated.",
+            "social_media": "Social media post generated.",
+        }
+        st.success(_success_labels.get(output_mode, "Done."))
         with st.expander("Pipeline log"):
             st.code(log_text, language="text")
 
         st.markdown('<div style="height:0.8rem"></div>', unsafe_allow_html=True)
 
-        # Bundle all outputs into a single zip to avoid Streamlit rerun button-disappearing bug
-        paper_path = "output/paper.docx"
+        # Common output paths
+        excel_path = "output/data_and_results.xlsx"
         repro_path = "output/reproduce.py"
         scatter_path = "output/scatterplot.png"
         coeff_path = "output/coefficients.png"
 
+        # ── Social media mode: preview post + image inline ──
+        if output_mode == "social_media":
+            social_txt = "output/social_post.txt"
+            social_img = "output/social_image.png"
+            if os.path.exists(social_txt):
+                with open(social_txt) as f:
+                    post = f.read()
+                st.markdown("#### Your post")
+                st.text_area("post", post, height=260, label_visibility="collapsed")
+            if os.path.exists(social_img):
+                st.image(social_img, caption="Shareable image", use_container_width=True)
+
+        # ── Policy brief mode: nothing to preview inline (it's a docx), just bundle ──
+
+        # Bundle everything for this mode into one zip
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            if os.path.exists(paper_path):
-                zf.write(paper_path, "empirica_paper.docx")
-            if os.path.exists(repro_path):
-                zf.write(repro_path, "reproduce.py")
-            if os.path.exists(scatter_path):
-                zf.write(scatter_path, "scatterplot.png")
-            if os.path.exists(coeff_path):
-                zf.write(coeff_path, "coefficients.png")
+            if output_mode == "paper":
+                if os.path.exists("output/paper.docx"):
+                    zf.write("output/paper.docx", "empirica_paper.docx")
+                if os.path.exists(scatter_path):
+                    zf.write(scatter_path, "scatterplot.png")
+                if os.path.exists(coeff_path):
+                    zf.write(coeff_path, "coefficients.png")
+                if os.path.exists(repro_path):
+                    zf.write(repro_path, "reproduce.py")
+            elif output_mode == "policy_brief":
+                if os.path.exists("output/policy_brief.docx"):
+                    zf.write("output/policy_brief.docx", "policy_brief.docx")
+                if os.path.exists(scatter_path):
+                    zf.write(scatter_path, "scatterplot.png")
+                if os.path.exists(coeff_path):
+                    zf.write(coeff_path, "coefficients.png")
+            elif output_mode == "social_media":
+                if os.path.exists("output/social_post.txt"):
+                    zf.write("output/social_post.txt", "social_post.txt")
+                if os.path.exists("output/social_image.png"):
+                    zf.write("output/social_image.png", "social_image.png")
+            # Excel goes in every bundle if it was produced
+            if export_excel and os.path.exists(excel_path):
+                zf.write(excel_path, "data_and_results.xlsx")
         zip_buf.seek(0)
 
+        _dl_labels = {
+            "paper": "📦 Download All (Paper + Code + Charts + Data)",
+            "policy_brief": "📦 Download All (Brief + Charts + Data)",
+            "social_media": "📦 Download All (Post + Image + Data)",
+        }
         st.download_button(
-            "📦 Download All (Paper + Code + Charts)",
+            _dl_labels.get(output_mode, "📦 Download All"),
             data=zip_buf.getvalue(),
             file_name="empirica_output.zip",
             mime="application/zip",
