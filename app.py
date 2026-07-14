@@ -1024,20 +1024,87 @@ st.markdown("""
 # ── Real Streamlit widgets (hidden off-screen, but fully functional) ──
 hypothesis = st.text_input("h", label_visibility="collapsed", key="pill_hyp")
 
+# ── Styled output-format selector (segmented pills matching the design system) ──
+st.markdown("""
+<style>
+/* Center + constrain the radio group to match the input pill width */
+div[data-testid="stRadio"] {
+    max-width: 800px;
+    margin: 0 auto 0.4rem auto;
+}
+div[data-testid="stRadio"] > label {
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.6rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.18em !important;
+    text-transform: uppercase !important;
+    color: #94A3B8 !important;
+    text-align: center;
+    display: block;
+    margin-bottom: 0.7rem !important;
+}
+/* The row of options */
+div[data-testid="stRadio"] div[role="radiogroup"] {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 0.6rem !important;
+    flex-wrap: wrap;
+}
+/* Each option becomes a pill */
+div[data-testid="stRadio"] div[role="radiogroup"] > label {
+    background: #F8FAFC !important;
+    border: 1.5px solid #E2E8F0 !important;
+    border-radius: 2rem !important;
+    padding: 0.55rem 1.3rem !important;
+    margin: 0 !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex !important;
+    align-items: center;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] > label:hover {
+    border-color: #93C5FD !important;
+    background: #EFF6FF !important;
+}
+/* Hide the actual radio dot */
+div[data-testid="stRadio"] div[role="radiogroup"] > label > div:first-child {
+    display: none !important;
+}
+/* The option text */
+div[data-testid="stRadio"] div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    color: #64748B !important;
+    margin: 0 !important;
+}
+/* Selected pill: filled blue */
+div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) {
+    background: #3B5BDB !important;
+    border-color: #3B5BDB !important;
+    box-shadow: 0 6px 18px rgba(59,91,219,0.25);
+}
+div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Output mode selector
 _mode_label = st.radio(
     "Output format",
-    ["📄 Academic paper", "📋 Policy brief (one-pager)", "📱 Social media post"],
+    ["📄 Academic paper", "📋 Policy brief", "📱 Social media post"],
     horizontal=True,
     key="output_mode_radio",
 )
 _MODE_MAP = {
     "📄 Academic paper": "paper",
-    "📋 Policy brief (one-pager)": "policy_brief",
+    "📋 Policy brief": "policy_brief",
     "📱 Social media post": "social_media",
 }
 output_mode = _MODE_MAP.get(_mode_label, "paper")
-export_excel = st.checkbox("Also export data + results to Excel", value=True, key="excel_toggle")
+export_excel = True  # always export the dataset + model results to Excel
 
 if st.button("g", key="pill_gear"):
     st.session_state.show_framing = not st.session_state.show_framing
