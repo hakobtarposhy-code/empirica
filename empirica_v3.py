@@ -738,10 +738,16 @@ class WorldBankFetcher:
                 for c in data[1]:
                     region = (c.get("region", {}) or {}).get("value", "")
                     capital = c.get("capitalCity", "")
-                    code = c.get("id", "")
+                    # The indicator-data endpoint returns the 2-letter code in country.id,
+                    # so we must store the 2-letter (iso2Code) code here to match it.
+                    code2 = c.get("iso2Code", "")
+                    code3 = c.get("id", "")
                     # Real country: has a real region (not Aggregates) and a capital city
                     if region and region != "Aggregates" and capital.strip():
-                        real.add(code)
+                        if code2:
+                            real.add(code2)
+                        if code3:
+                            real.add(code3)  # store both to be safe
         except Exception as e:
             print(f"    ⚠️  Could not fetch country metadata for filtering: {e}")
         cls._real_countries = real
@@ -781,8 +787,12 @@ class WorldBankFetcher:
                 value = record.get("value")
                 if value is not None:
                     cc = record.get("country", {}).get("id", "")
-                    # Prefer the metadata-based real-country filter; fall back to hardcoded set
-                    is_real = (cc in real_countries) if real_countries else (cc not in self.AGGREGATES)
+                    # Filter: keep real countries, drop aggregates. Use the metadata set if
+                    # it looks valid; otherwise fall back to the hardcoded aggregates list.
+                    if real_countries and len(real_countries) > 50:
+                        is_real = cc in real_countries
+                    else:
+                        is_real = cc not in self.AGGREGATES
                     if is_real:
                         all_data.append({
                             "country": record["country"]["value"],
@@ -796,6 +806,40 @@ class WorldBankFetcher:
             page += 1
 
         df = pd.DataFrame(all_data)
+        # SAFETY NET: if the filter somehow dropped everything but the API returned rows,
+        # fall back to the hardcoded aggregates filter so we never silently return empty.
+        if df.empty:
+            print("    ⚠️  Filter removed all rows, retrying with basic aggregate filter...")
+            all_data = []
+            page = 1
+            while True:
+                url = (
+                    f"{self.BASE_URL}/country/all/indicator/{indicator}"
+                    f"?date={start_year}:{end_year}&format=json&per_page=1000&page={page}"
+                )
+                try:
+                    resp = requests.get(url, timeout=45)
+                    resp.raise_for_status()
+                    resp_data = resp.json()
+                except Exception:
+                    break
+                if len(resp_data) < 2 or not resp_data[1]:
+                    break
+                for record in resp_data[1]:
+                    value = record.get("value")
+                    if value is not None:
+                        cc = record.get("country", {}).get("id", "")
+                        if cc not in self.AGGREGATES:
+                            all_data.append({
+                                "country": record["country"]["value"],
+                                "country_code": cc,
+                                "year": int(record["date"]),
+                                "value": float(value),
+                            })
+                if page >= resp_data[0].get("pages", 1):
+                    break
+                page += 1
+            df = pd.DataFrame(all_data)
         if not df.empty:
             print(f"    ✅ {len(df)} observations, {df['country'].nunique()} countries")
         else:
