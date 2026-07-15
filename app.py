@@ -1137,6 +1137,27 @@ div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) div
     color: #FFFFFF !important;
     font-weight: 600 !important;
 }
+/* Narrative selectbox: match design system */
+div[data-testid="stSelectbox"] {
+    max-width: 420px;
+    margin: 0.3rem auto 0.6rem auto;
+}
+div[data-testid="stSelectbox"] > label {
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.6rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.18em !important;
+    text-transform: uppercase !important;
+    color: #94A3B8 !important;
+    text-align: center;
+    display: block;
+}
+div[data-testid="stSelectbox"] > div > div {
+    background: #F8FAFC !important;
+    border: 1.5px solid #E2E8F0 !important;
+    border-radius: 1rem !important;
+    font-family: 'Inter', sans-serif !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1154,6 +1175,15 @@ _MODE_MAP = {
 }
 output_mode = _MODE_MAP.get(_mode_label, "paper")
 export_excel = True  # always export the dataset + model results to Excel
+
+# ── Narrative selector (from knowledge/narratives/*.docx) ──
+try:
+    from empirica_v3 import list_narratives
+    _narr_options = ["None (no narrative)"] + list_narratives()
+except Exception:
+    _narr_options = ["None (no narrative)"]
+_narr_choice = st.selectbox("Core narrative (optional)", _narr_options, key="narrative_select")
+narrative_id = "" if _narr_choice.startswith("None") else _narr_choice
 
 if st.button("g", key="pill_gear"):
     st.session_state.show_framing = not st.session_state.show_framing
@@ -1572,6 +1602,7 @@ if run_button:
                 advocacy_temperature=advocacy_temperature if advocacy_angle.strip() else 1,
                 output_mode=output_mode,
                 export_excel=export_excel,
+                narrative_id=narrative_id,
             )
         except Exception as e:
             result_box["error"] = str(e)

@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v1.5 - Complete Research Pipeline
+# EMPIRICA v1.7 - Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
@@ -46,6 +46,18 @@
 #        Excel export (data_and_results.xlsx) with data, model results,
 #        descriptive stats, and metadata sheets - runs for all modes.
 #        run_empirica now returns {"results":..., "outputs":{...paths}}.
+# v1.6: Data + literature depth. (1) Citation snowballing - walks references of
+#        top-cited hits (how real lit reviews are built), SS API key support via
+#        SEMANTIC_SCHOLAR_API_KEY env var. (2) Full World Bank catalog (~16k
+#        indicators) fetched once + cached; validation failures now pick from
+#        real catalog matches instead of guessing. (3) TEDB fetcher - EU standard
+#        VAT rates panel via the EC's official SOAP service (new data_source
+#        "tedb_vat": X = VAT rate, Y = any World Bank indicator).
+# v1.7: Knowledge base (raw docs, no distilled layer). knowledge/narratives/*.docx
+#        = human-authored argument base, chosen narrative injected VERBATIM as the
+#        paper's red line into Agent 5 + every writing prompt. knowledge/papers/*
+#        = exemplar papers, raw methodology excerpts injected into the methods
+#        prompt. UI gets a narrative dropdown. New dep: pypdf.
 #          rough transition instructions, author-subordination enforcement,
 #          proofreader AI-cadence detection (monotone rhythm, smooth transitions,
 #          hedge stacking, evaluative filler), parenthetical aside encouragement
@@ -109,6 +121,9 @@ warnings.filterwarnings("ignore")
 CLAUDE_MODEL = "claude-opus-4-6"                      # ← Opus 4.6
 OPENAI_MODEL = "gpt-4o"                               # cross-model reviewer (Agent 8)
 OUTPUT_DIR = "output"
+KNOWLEDGE_DIR = "knowledge"   # raw docs the AI reads directly:
+                              #   knowledge/narratives/*.docx  (human-authored argument base)
+                              #   knowledge/papers/*.pdf|.docx (exemplar papers, methods read raw)
 
 INDICATOR_FAMILIES = {
     "NY.GDP": "GDP",
@@ -254,6 +269,99 @@ def strip_duplicate_heading(text: str, heading: str) -> str:
             return "\n".join(lines[1:]).strip()
 
     return text
+
+
+# ============================================================================
+# KNOWLEDGE BASE - raw documents read directly by the AI (no distilled layer)
+# ============================================================================
+def _extract_docx_text(path: str) -> str:
+    """Full raw text of a .docx: paragraphs + tables, untouched."""
+    try:
+        d = Document(path)
+        parts = [p.text for p in d.paragraphs if p.text.strip()]
+        for table in d.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts)
+    except Exception as e:
+        print(f"    \u26A0\uFE0F  Could not read {os.path.basename(path)}: {e}")
+        return ""
+
+
+def list_narratives() -> list:
+    """Available narratives = the raw .docx files in knowledge/narratives/."""
+    nd = os.path.join(KNOWLEDGE_DIR, "narratives")
+    if not os.path.isdir(nd):
+        return []
+    return sorted(
+        os.path.splitext(f)[0] for f in os.listdir(nd)
+        if f.lower().endswith(".docx") and not f.startswith("~")
+    )
+
+
+def load_narrative(narrative_id: str) -> str:
+    """Load the chosen narrative brief VERBATIM. This human-authored text is the
+    paper's core argument - the AI executes it, never rewrites or invents it."""
+    if not narrative_id:
+        return ""
+    path = os.path.join(KNOWLEDGE_DIR, "narratives", f"{narrative_id}.docx")
+    if not os.path.exists(path):
+        print(f"    \u26A0\uFE0F  Narrative not found: {path}")
+        return ""
+    text = _extract_docx_text(path)
+    print(f"  \U0001F4CC Narrative loaded: {narrative_id} ({len(text):,} chars, injected verbatim)")
+    return text
+
+
+_EXEMPLAR_CACHE = None
+
+def load_exemplar_methods(max_chars_per_paper: int = 6000) -> str:
+    """Raw methodology excerpts from the exemplar papers in knowledge/papers/.
+    The text is windowed around the methods/data sections (papers are too long to
+    inject whole) but is otherwise UNTOUCHED - the AI reads the authors' own words."""
+    global _EXEMPLAR_CACHE
+    if _EXEMPLAR_CACHE is not None:
+        return _EXEMPLAR_CACHE
+
+    pd_dir = os.path.join(KNOWLEDGE_DIR, "papers")
+    if not os.path.isdir(pd_dir):
+        _EXEMPLAR_CACHE = ""
+        return ""
+
+    METHOD_MARKERS = ["methodology", "empirical strategy", "empirical analysis",
+                      "data and method", "econometric", "estimation", "identification",
+                      "empirical model", "data description", "the model"]
+    blocks = []
+    for fname in sorted(os.listdir(pd_dir)):
+        path = os.path.join(pd_dir, fname)
+        raw = ""
+        if fname.lower().endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(path)
+                raw = "\n".join((p.extract_text() or "") for p in reader.pages)
+            except Exception as e:
+                print(f"    \u26A0\uFE0F  PDF read failed {fname}: {e}")
+                continue
+        elif fname.lower().endswith(".docx") and not fname.startswith("~"):
+            raw = _extract_docx_text(path)
+        if not raw:
+            continue
+        low = raw.lower()
+        start = 0
+        for marker in METHOD_MARKERS:
+            i = low.find(marker)
+            if i > 500:          # skip TOC hits at the very top
+                start = max(0, i - 200)
+                break
+        excerpt = raw[start:start + max_chars_per_paper]
+        blocks.append(f"----- EXEMPLAR: {fname} (raw excerpt) -----\n{excerpt}")
+        print(f"  \U0001F4D8 Exemplar loaded: {fname[:55]} ({len(excerpt):,} chars raw)")
+
+    _EXEMPLAR_CACHE = "\n\n".join(blocks)
+    return _EXEMPLAR_CACHE
 
 
 # ============================================================================
@@ -470,28 +578,76 @@ def check_data_availability(indicator: str, start_year: int = 2000, end_year: in
     return 0
 
 
-def search_wb_indicators(keyword: str, max_results: int = 5) -> list:
+_WB_CATALOG_CACHE = None
+
+def fetch_wb_catalog() -> list:
+    """Fetch the FULL World Bank indicator catalog (~16,000 indicators) once and
+    cache it in memory + on disk. This gives Agent 1 real knowledge of what data
+    exists instead of guessing codes from training memory."""
+    global _WB_CATALOG_CACHE
+    if _WB_CATALOG_CACHE is not None:
+        return _WB_CATALOG_CACHE
+
+    cache_path = os.path.join(OUTPUT_DIR, "wb_catalog.json")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path) as f:
+                _WB_CATALOG_CACHE = json.load(f)
+            print(f"  📚 WB catalog loaded from cache ({len(_WB_CATALOG_CACHE)} indicators)")
+            return _WB_CATALOG_CACHE
+        except Exception:
+            pass
+
+    print("  📚 Fetching World Bank indicator catalog (one-time, ~16k indicators)...")
+    catalog = []
     try:
-        resp = requests.get(
-            f"https://api.worldbank.org/v2/indicator?format=json&per_page=100",
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if len(data) < 2 or not data[1]:
-            return []
-        kw = keyword.lower()
-        matches = []
-        for ind in data[1]:
-            name = ind.get("name", "").lower()
-            if kw in name:
-                matches.append({
-                    "code": ind["id"],
-                    "name": ind["name"],
+        page = 1
+        while True:
+            resp = requests.get(
+                f"https://api.worldbank.org/v2/indicator?format=json&per_page=5000&page={page}",
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if len(data) < 2 or not data[1]:
+                break
+            for ind in data[1]:
+                catalog.append({
+                    "code": ind.get("id", ""),
+                    "name": ind.get("name", ""),
+                    "note": (ind.get("sourceNote", "") or "")[:200],
                 })
-        return matches[:max_results]
-    except Exception:
+            if page >= data[0].get("pages", 1):
+                break
+            page += 1
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(catalog, f)
+        print(f"    ✅ Catalog cached: {len(catalog)} indicators")
+    except Exception as e:
+        print(f"    ⚠️  Catalog fetch failed: {e}")
+    _WB_CATALOG_CACHE = catalog
+    return catalog
+
+
+def search_wb_indicators(keyword: str, max_results: int = 20) -> list:
+    """Scored keyword search over the full cached catalog. Multi-word queries
+    rank indicators matching more words higher; name matches beat note matches."""
+    catalog = fetch_wb_catalog()
+    if not catalog:
         return []
+    words = [w for w in re.findall(r"[a-z]+", keyword.lower()) if len(w) > 2]
+    if not words:
+        return []
+    scored = []
+    for ind in catalog:
+        name = ind["name"].lower()
+        note = ind.get("note", "").lower()
+        score = sum(3 for w in words if w in name) + sum(1 for w in words if w in note)
+        if score > 0:
+            scored.append((score, ind))
+    scored.sort(key=lambda t: -t[0])
+    return [ind for _, ind in scored[:max_results]]
 
 
 def validate_and_fix_indicators(plan: dict) -> dict:
@@ -503,9 +659,11 @@ def validate_and_fix_indicators(plan: dict) -> dict:
 
         if not info:
             print(f"    ⚠️  {code} does not exist in World Bank!")
+            matches = search_wb_indicators(plan[label_key], max_results=20)
+            catalog_block = "\n".join(f"- {m['code']}: {m['name']}" for m in matches) or "(no catalog matches)"
             alt = ask_claude_json(
-                system="You are a World Bank data expert. Suggest a VALID World Bank indicator code. Return JSON: {\"code\": \"XX.XXX.XXX\", \"name\": \"description\"}",
-                user=f"The indicator {code} ({plan[label_key]}) does not exist. Suggest a valid alternative that measures the same concept.",
+                system="You are a World Bank data expert. Pick the best indicator FROM THE CANDIDATE LIST provided (these are real, verified catalog entries). Return JSON: {\"code\": \"XX.XXX.XXX\", \"name\": \"description\"}",
+                user=f"The indicator {code} ({plan[label_key]}) does not exist. Pick the closest match for '{plan[label_key]}' from these REAL catalog entries:\n{catalog_block}",
             )
             plan[var_key] = alt.get("code", code)
             plan[label_key] = alt.get("name", plan[label_key])
@@ -513,16 +671,14 @@ def validate_and_fix_indicators(plan: dict) -> dict:
         else:
             count = check_data_availability(code, plan.get("start_year", 2000), plan.get("end_year", 2023))
             if count < 200:
-                print(f"    ⚠️  {code} has very sparse data ({count} points). Asking AI for denser alternative...")
+                print(f"    ⚠️  {code} has very sparse data ({count} points). Searching catalog for denser alternative...")
+                matches = search_wb_indicators(plan[label_key], max_results=20)
+                catalog_block = "\n".join(f"- {m['code']}: {m['name']}" for m in matches) or "(no catalog matches)"
                 alt = ask_claude_json(
-                    system="""You are a World Bank data expert. The user needs an indicator with GOOD data coverage (most countries, most years).
-Suggest a VALID World Bank indicator that measures the same concept but has better data availability.
-Common well-populated indicators include:
-- NY.GDP.PCAP.PP.KD, NY.GDP.MKTP.KD.ZG, SP.DYN.LE00.IN, SP.DYN.IMRT.IN
-- SE.XPD.TOTL.GD.ZS, SH.XPD.CHEX.GD.ZS, IT.NET.USER.ZS, SP.URB.TOTL.IN.ZS
-- SL.UEM.TOTL.ZS, FP.CPI.TOTL.ZG, SP.POP.GROW, EG.ELC.ACCS.ZS
+                    system="""You are a World Bank data expert. The user needs an indicator with GOOD data coverage.
+Pick the best alternative FROM THE CANDIDATE LIST provided (real, verified catalog entries), preferring broad well-known measures over narrow ones.
 Return JSON: {"code": "XX.XXX.XXX", "name": "description", "reasoning": "why this is better"}""",
-                    user=f"Indicator {code} ({plan[label_key]}) has only {count} data points (very sparse). I need something that measures '{plan[label_key]}' but with much better coverage across countries and years.",
+                    user=f"Indicator {code} ({plan[label_key]}) has only {count} data points (very sparse). Pick a better-covered alternative measuring '{plan[label_key]}' from these REAL catalog entries:\n{catalog_block}",
                 )
                 new_code = alt.get("code", code)
                 new_count = check_data_availability(new_code, plan.get("start_year", 2000), plan.get("end_year", 2023))
@@ -552,6 +708,7 @@ Given a hypothesis, decide the BEST data source and pick indicator codes.
 DATA SOURCE SELECTION:
 - Use "worldbank" for: global/developing country topics, health, education, poverty, environment, infrastructure, demographics
 - Use "ameco" for: EU/euro area macro-fiscal topics, fiscal policy, output gaps, structural deficits, unit labour costs, government debt, inflation (HICP), unemployment, current account, potential GDP, cyclical adjustment
+- Use "tedb_vat" ONLY when the hypothesis is specifically about VAT rates in EU countries (e.g. "higher VAT rates reduce consumption"). This source provides the X variable (standard VAT rate, EU-27 panel from EC Taxes in Europe Database); the Y variable and controls then come from World Bank codes as usual.
 - Use "both" only if the hypothesis explicitly compares EU vs global data (rare)
 
 AMECO DATASET CODES (via DBnomics, provider="AMECO"):
@@ -600,7 +757,7 @@ CRITICAL RULES:
 
 Return JSON:
 {
-    "data_source": "worldbank" | "ameco" | "both",
+    "data_source": "worldbank" | "ameco" | "tedb_vat" | "both",
     "title": "Academic paper title (specific, not generic)",
     "statement": "Cleaned hypothesis",
     "independent_var": "World Bank indicator code for X (ONLY if data_source is worldbank/both)",
@@ -930,36 +1087,94 @@ class DBnomicsFetcher:
             return pd.DataFrame()
 
 
+class TEDBFetcher:
+    """EC Taxes in Europe Database - VAT rates via the official SOAP web service.
+    Endpoint: https://ec.europa.eu/taxation_customs/tedb/ws/VatRetrievalService
+    Operation RetrieveVatRates(memberStates, situationOn) -> standard/reduced VAT rates.
+    NOTE: the SOAP service covers VAT ONLY. Excise duties (tobacco etc.) have no
+    public API - those come via the custom-dataset upload path."""
+
+    ENDPOINT = "https://ec.europa.eu/taxation_customs/tedb/ws/VatRetrievalService"
+    EU_MS = ["AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
+             "IE","IT","LT","LU","LV","MT","NL","PL","PT","RO","SE","SI","SK"]
+    ISO_TO_NAME = {
+        "AT":"Austria","BE":"Belgium","BG":"Bulgaria","CY":"Cyprus","CZ":"Czechia",
+        "DE":"Germany","DK":"Denmark","EE":"Estonia","EL":"Greece","ES":"Spain",
+        "FI":"Finland","FR":"France","HR":"Croatia","HU":"Hungary","IE":"Ireland",
+        "IT":"Italy","LT":"Lithuania","LU":"Luxembourg","LV":"Latvia","MT":"Malta",
+        "NL":"Netherlands","PL":"Poland","PT":"Portugal","RO":"Romania","SE":"Sweden",
+        "SI":"Slovenia","SK":"Slovakia",
+    }
+
+    def _soap_request(self, situation_on: str) -> str:
+        ms_block = "".join(f"<types:isoCode>{c}</types:isoCode>" for c in self.EU_MS)
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:msg="urn:ec.europa.eu:taxud:tedb:services:v1:IVatRetrievalService"
+  xmlns:types="urn:ec.europa.eu:taxud:tedb:services:v1:IVatRetrievalService:types">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <msg:retrieveVatRatesReqMsg>
+      <types:memberStates>{ms_block}</types:memberStates>
+      <types:situationOn>{situation_on}</types:situationOn>
+    </msg:retrieveVatRatesReqMsg>
+  </soapenv:Body>
+</soapenv:Envelope>"""
+
+    def fetch_standard_rates(self, start_year: int = 2010, end_year: int = 2023) -> pd.DataFrame:
+        """Build a country-year panel of STANDARD VAT rates by querying each year
+        (situation on 1 July). Returns DataFrame[country, country_code, year, value]."""
+        print(f"  \U0001F4CA Fetching TEDB VAT rates ({start_year}-{end_year})...")
+        rows = []
+        for year in range(start_year, end_year + 1):
+            date = f"{year}-07-01"
+            try:
+                resp = requests.post(
+                    self.ENDPOINT,
+                    data=self._soap_request(date).encode("utf-8"),
+                    headers={"Content-Type": "text/xml; charset=utf-8"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                # Parse without external deps: findall on namespaced-ish tags via regex
+                xml = resp.text
+                # Each vatRateResults block: memberState, type(STANDARD/REDUCED), rate/value
+                blocks = re.findall(r"<(?:\w+:)?vatRateResults>(.*?)</(?:\w+:)?vatRateResults>", xml, re.DOTALL)
+                for b in blocks:
+                    ms = re.search(r"<(?:\w+:)?memberState>\s*([A-Z]{2})\s*</", b)
+                    rtype = re.search(r"<(?:\w+:)?type>\s*(\w+)\s*</", b)
+                    rval = re.search(r"<(?:\w+:)?value>\s*([\d.]+)\s*</", b)
+                    if ms and rtype and rval and rtype.group(1).upper() == "STANDARD":
+                        code = ms.group(1)
+                        rows.append({
+                            "country": self.ISO_TO_NAME.get(code, code),
+                            "country_code": code,
+                            "year": year,
+                            "value": float(rval.group(1)),
+                        })
+            except Exception as e:
+                print(f"    \u26A0\uFE0F  TEDB {year} failed: {e}")
+            time.sleep(0.3)
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df = df.drop_duplicates(subset=["country_code", "year"])
+            print(f"    \u2705 TEDB: {len(df)} obs, {df['country'].nunique()} countries")
+        else:
+            print("    \u26A0\uFE0F  TEDB returned no data")
+        return df
+
+
 class SemanticScholarSearcher:
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
+    FIELDS = "paperId,title,authors,year,journal,externalIds,abstract,citationCount"
 
-    def search(self, query: str, max_results: int = 15) -> list:
-        papers = []
-        for attempt in range(2):  # 2 attempts max (was 3)
-            try:
-                print(f"  📖 Semantic Scholar (attempt {attempt + 1}): {query}")
-                resp = requests.get(
-                    f"{self.BASE_URL}/paper/search",
-                    params={
-                        "query": query, "limit": max_results,
-                        "fields": "title,authors,year,journal,externalIds,abstract,citationCount",
-                    },
-                    timeout=10,  # fail fast (was 30)
-                )
-                # If rate-limited, stop immediately instead of retrying (retries just get 429 again)
-                if resp.status_code == 429:
-                    print("    ⚠️  Semantic Scholar rate-limited (429). Skipping, PubMed will cover literature.")
-                    return []
-                resp.raise_for_status()
-                papers = resp.json().get("data", [])
-                if papers:
-                    break
-            except Exception as e:
-                print(f"    -> Attempt {attempt + 1} failed: {e}")
-                if attempt < 1:
-                    time.sleep(2)
-                papers = []
+    def _headers(self):
+        """Use an API key if provided (free at semanticscholar.org/product/api).
+        Without a key we get rate-limited hard; with one, ~100 req/sec."""
+        key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
+        return {"x-api-key": key} if key else {}
 
+    def _parse_papers(self, papers: list) -> list:
         articles = []
         for p in papers:
             try:
@@ -977,6 +1192,7 @@ class SemanticScholarSearcher:
                 citations = p.get("citationCount", 0) or 0
                 authors_short = f"{authors[0]} et al." if len(authors) > 3 else ", ".join(authors)
                 articles.append({
+                    "paper_id": p.get("paperId", ""),
                     "title": title, "authors": authors, "authors_short": authors_short,
                     "year": year, "journal": journal, "doi": doi, "pmid": "",
                     "abstract": abstract, "citations": citations, "source": "Semantic Scholar",
@@ -986,6 +1202,54 @@ class SemanticScholarSearcher:
                 continue
         articles.sort(key=lambda a: a.get("citations", 0), reverse=True)
         return articles
+
+    def search(self, query: str, max_results: int = 15) -> list:
+        papers = []
+        for attempt in range(2):
+            try:
+                print(f"  📖 Semantic Scholar (attempt {attempt + 1}): {query}")
+                resp = requests.get(
+                    f"{self.BASE_URL}/paper/search",
+                    params={"query": query, "limit": max_results, "fields": self.FIELDS},
+                    headers=self._headers(),
+                    timeout=10,
+                )
+                if resp.status_code == 429:
+                    print("    ⚠️  Semantic Scholar rate-limited (429). Set SEMANTIC_SCHOLAR_API_KEY to avoid this.")
+                    return []
+                resp.raise_for_status()
+                papers = resp.json().get("data", [])
+                if papers:
+                    break
+            except Exception as e:
+                print(f"    -> Attempt {attempt + 1} failed: {e}")
+                if attempt < 1:
+                    time.sleep(2)
+                papers = []
+        return self._parse_papers(papers)
+
+    def snowball(self, paper_id: str, max_results: int = 20) -> list:
+        """Citation snowballing: fetch the REFERENCES of a paper. This is how real
+        literature reviews are built - find one good paper, walk its bibliography."""
+        if not paper_id:
+            return []
+        try:
+            resp = requests.get(
+                f"{self.BASE_URL}/paper/{paper_id}/references",
+                params={"limit": max_results, "fields": self.FIELDS},
+                headers=self._headers(),
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                return []
+            resp.raise_for_status()
+            refs = [item.get("citedPaper", {}) for item in resp.json().get("data", [])]
+            refs = [r for r in refs if r and (r.get("citationCount") or 0) >= 20]
+            print(f"  🔗 Snowballed {len(refs)} well-cited references")
+            return self._parse_papers(refs)
+        except Exception as e:
+            print(f"    ⚠️  Snowball failed: {e}")
+            return []
 
 
 class PubMedSearcher:
@@ -1073,6 +1337,16 @@ class LiteratureSearcher:
         if pm_broad and pm_broad != pm_query:
             print("  📖 PubMed (broad query)...")
             all_articles.extend(self.pm.search(pm_broad, max_results=5))
+
+        # --- CITATION SNOWBALLING: walk the references of the top-cited hits ---
+        # This mirrors how researchers actually build lit reviews. Keyword search
+        # finds entry points; the bibliography of a good paper finds the canon.
+        ss_hits = [a for a in all_articles if a.get("paper_id")]
+        ss_hits.sort(key=lambda a: a.get("citations", 0), reverse=True)
+        for seed in ss_hits[:3]:
+            print(f"  🔗 Snowballing references of: {seed['title'][:55]}...")
+            all_articles.extend(self.ss.snowball(seed["paper_id"], max_results=20))
+            time.sleep(0.5)
 
         # Deduplicate by DOI and title
         seen_dois = set()
@@ -1360,10 +1634,14 @@ class StatisticsEngine:
 # ============================================================================
 # AGENT 5: RESULTS INTERPRETER (AI - extended thinking)
 # ============================================================================
-def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 1) -> dict:
+def ai_interpret_results(results: dict, plan: dict, advocacy_angle: str = "", advocacy_temperature: int = 1,
+                         narrative_text: str = "") -> dict:
     print("\n⚖️ AGENT 5: AI interpreting results (extended thinking)...")
 
     advocacy_block = ""
+    if narrative_text:
+        advocacy_block += ("\nCORE NARRATIVE (human-authored, verbatim). Interpret results in service of "
+                           "this argument where the data honestly allows:\n" + narrative_text[:8000] + "\n")
     if advocacy_angle and advocacy_angle.strip():
         if advocacy_temperature <= 3:
             advocacy_block = f'\nNote: the author leans toward "{advocacy_angle.strip()}". Keep interpretation honest but when results are ambiguous, lean slightly toward this framing.'
@@ -1520,7 +1798,8 @@ CRITICAL: Never fabricate data or misrepresent statistical significance. The num
 The framing, emphasis, and narrative arc do the persuasion work."""
 
 class PaperWriter:
-    def __init__(self, plan, results, interpretation, literature, advocacy_angle="", advocacy_temperature=1):
+    def __init__(self, plan, results, interpretation, literature, advocacy_angle="", advocacy_temperature=1,
+                 narrative_text=""):
         self.plan = plan
         self.results = results
         self.interp = interpretation
@@ -1528,6 +1807,16 @@ class PaperWriter:
         self.advocacy_angle = advocacy_angle
         self.advocacy_temperature = advocacy_temperature
         self.advocacy_instruction = build_advocacy_instruction(advocacy_angle, advocacy_temperature)
+        if narrative_text:
+            self.advocacy_instruction = (
+                "\n\nCORE NARRATIVE (human-authored, verbatim from the narrative base). "
+                "This is the paper's red line. Every section must serve this argument: the "
+                "literature review sets it up, the results test it, the discussion and "
+                "conclusion land it. Do NOT invent a different thesis. Data and statistics "
+                "stay honest - the narrative shapes framing and emphasis, never the numbers.\n"
+                "----- NARRATIVE START -----\n" + narrative_text + "\n----- NARRATIVE END -----\n"
+                + self.advocacy_instruction
+            )
         self._build_citation_block()
 
     def _build_citation_block(self):
@@ -1766,7 +2055,7 @@ RULES:
 - Cite at least 10 of your {len(self.literature)} papers.""",
             ),
             "methodology": (
-                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY a methodology/data section (350-450 words). {WRITING_RULES}{adv}",
+                f"You are writing an empirical economics paper. The prose must be rigorous enough for peer review but clear enough that an intelligent non-economist can follow every argument. Write ONLY a methodology/data section (350-450 words). {WRITING_RULES}{adv}\n\nHOW REAL PAPERS HANDLE METHODS - raw excerpts from exemplar papers (match their rigor in justifying data choices and model specification, NOT their topic):\n{load_exemplar_methods()[:18000]}",
                 f"""Hypothesis: {self.plan['statement']}
 X: {self.plan['x_label']} ({x_code})
 Y: {self.plan['y_label']} ({y_code})
@@ -2858,7 +3147,7 @@ MARIO-RULES (policy writing lessons):
 
 
 def write_policy_brief(plan, results, interpretation, literature,
-                        advocacy_angle="", advocacy_temperature=1):
+                        advocacy_angle="", advocacy_temperature=1, narrative_text=""):
     """Generate a one-page policy brief instead of a full academic paper."""
     print("\n📝 Writing POLICY BRIEF (one-pager)...")
 
@@ -2866,6 +3155,9 @@ def write_policy_brief(plan, results, interpretation, literature,
     ols_c = results.get("ols_controls", {}) or results.get("ols", {})
     fe = results.get("fixed_effects", {})
     adv = build_advocacy_instruction(advocacy_angle, advocacy_temperature)
+    if narrative_text:
+        adv = ("\n\nCORE NARRATIVE (human-authored, verbatim). The brief argues this - "
+               "data stays honest:\n" + narrative_text[:8000] + "\n" + adv)
 
     cite_lines = [f"- {a['authors_short']} ({a['year']}): {a['title']}" for a in literature[:12]]
     cites = "\n".join(cite_lines) if cite_lines else "(no external citations)"
@@ -3023,7 +3315,8 @@ def _make_social_image(plan, results, interpretation, output_dir):
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                  advocacy_angle: str = "", advocacy_temperature: int = 1,
-                 output_mode: str = "paper", export_excel: bool = True):
+                 output_mode: str = "paper", export_excel: bool = True,
+                 narrative_id: str = ""):
     """
     output_mode:
       "paper"        - full academic paper (default)
@@ -3032,7 +3325,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     export_excel: also write the dataset + model results to an .xlsx file
     """
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.5")
+    print("  EMPIRICA v1.7")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print(f"  Output mode: {output_mode}")
@@ -3070,6 +3363,19 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     if source == "ameco" and not HAS_DBNOMICS:
         print("  ⚠️  dbnomics not installed — falling back to World Bank...")
         source = "worldbank"
+
+    if source == "tedb_vat":
+        # ── TEDB VAT rates as X, World Bank indicator as Y ──
+        tedb = TEDBFetcher()
+        x_data = tedb.fetch_standard_rates(plan.get("start_year", 2010), plan.get("end_year", 2023))
+        wb = WorldBankFetcher()
+        y_data = wb.fetch(plan["dependent_var"], plan["start_year"], plan["end_year"])
+        if x_data.empty or y_data.empty:
+            print("  ⚠️  TEDB fetch failed — falling back to World Bank for both variables...")
+            source = "worldbank"
+        else:
+            plan["x_label"] = "Standard VAT rate (%)"
+            plan["_actual_source"] = "tedb_vat"
 
     if source in ("worldbank", "both"):
         # ── World Bank (original path) ──
@@ -3132,8 +3438,12 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     except Exception as e:
         print(f"  ⚠️  Coefficient plot failed: {e}")
 
+    # Load the chosen narrative (raw, verbatim) if one was selected
+    narrative_text = load_narrative(narrative_id) if narrative_id else ""
+
     # Agent 5: Interpret (extended thinking)
-    interpretation = ai_interpret_results(results, plan, advocacy_angle, advocacy_temperature)
+    interpretation = ai_interpret_results(results, plan, advocacy_angle, advocacy_temperature,
+                                          narrative_text=narrative_text)
 
     # Excel export (all modes, if requested) - the underlying data + model results
     excel_path = ""
@@ -3150,12 +3460,13 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     # ── OUTPUT MODE BRANCH ──
     if output_mode == "policy_brief":
         brief = write_policy_brief(plan, results, interpretation, literature,
-                                   advocacy_angle, advocacy_temperature)
+                                   advocacy_angle, advocacy_temperature,
+                                   narrative_text=narrative_text)
         brief_path = os.path.join(output_dir, "policy_brief.docx")
         _save_simple_docx(brief.get("policy_brief", ""), plan.get("title", "Policy Brief"), brief_path)
         outputs["policy_brief"] = brief_path
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.5 COMPLETE (policy brief)")
+        print("  ✅ EMPIRICA v1.7 COMPLETE (policy brief)")
         print("=" * 60)
         print(f"  Brief:  {brief_path}")
         print(f"  Excel:  {excel_path}")
@@ -3169,7 +3480,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
         outputs["social_post"] = social_path
         outputs["social_image"] = social_img
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.5 COMPLETE (social media)")
+        print("  ✅ EMPIRICA v1.7 COMPLETE (social media)")
         print("=" * 60)
         print(f"  Post:   {social_path}")
         print(f"  Image:  {social_img}")
@@ -3177,7 +3488,8 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
         print("=" * 60)
 
     else:  # "paper" (default)
-        writer = PaperWriter(plan, results, interpretation, literature, advocacy_angle, advocacy_temperature)
+        writer = PaperWriter(plan, results, interpretation, literature, advocacy_angle, advocacy_temperature,
+                             narrative_text=narrative_text)
         sections = writer.write_all()
         sections = ai_proofread(sections)
         sections = openai_review_and_fix(
@@ -3190,7 +3502,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                          scatterplot_path=scatterplot_path, coeff_plot_path=coeff_plot_path)
         outputs["paper"] = paper_path
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.5 COMPLETE")
+        print("  ✅ EMPIRICA v1.7 COMPLETE")
         print("=" * 60)
         print(f"  Paper:  {paper_path}")
         print(f"  Excel:  {excel_path}")
