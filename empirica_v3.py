@@ -78,6 +78,7 @@ import json
 import re
 import time
 import warnings
+import zipfile
 from datetime import datetime
 
 import requests
@@ -290,9 +291,42 @@ def _extract_docx_text(path: str) -> str:
         return ""
 
 
+_KB_EXTRACTED = False
+
+def _ensure_knowledge_dir():
+    """If knowledge/ is missing but knowledge.zip exists in the repo root,
+    extract it once. Runs at most once per process."""
+    global _KB_EXTRACTED
+    if _KB_EXTRACTED or os.path.isdir(KNOWLEDGE_DIR):
+        return
+    if os.path.exists("knowledge.zip"):
+        try:
+            with zipfile.ZipFile("knowledge.zip") as zf:
+                zf.extractall(".")
+            print("  \U0001F4E6 knowledge.zip extracted")
+        except Exception as e:
+            print(f"    \u26A0\uFE0F  Could not extract knowledge.zip: {e}")
+    _KB_EXTRACTED = True
+
+
+def _knowledge_subdir(name: str) -> str:
+    """Locate the narratives/ or papers/ directory regardless of how the zip was
+    built. Handles: knowledge/<name>, <name> at repo root, and one nested wrapper
+    level (e.g. knowledge/knowledge/<name>)."""
+    _ensure_knowledge_dir()
+    candidates = [os.path.join(KNOWLEDGE_DIR, name), name]
+    if os.path.isdir(KNOWLEDGE_DIR):
+        for entry in sorted(os.listdir(KNOWLEDGE_DIR)):
+            candidates.append(os.path.join(KNOWLEDGE_DIR, entry, name))
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return os.path.join(KNOWLEDGE_DIR, name)
+
+
 def list_narratives() -> list:
     """Available narratives = the raw .docx files in knowledge/narratives/."""
-    nd = os.path.join(KNOWLEDGE_DIR, "narratives")
+    nd = _knowledge_subdir("narratives")
     if not os.path.isdir(nd):
         return []
     return sorted(
@@ -306,7 +340,7 @@ def load_narrative(narrative_id: str) -> str:
     paper's core argument - the AI executes it, never rewrites or invents it."""
     if not narrative_id:
         return ""
-    path = os.path.join(KNOWLEDGE_DIR, "narratives", f"{narrative_id}.docx")
+    path = os.path.join(_knowledge_subdir("narratives"), f"{narrative_id}.docx")
     if not os.path.exists(path):
         print(f"    \u26A0\uFE0F  Narrative not found: {path}")
         return ""
@@ -325,7 +359,7 @@ def load_exemplar_methods(max_chars_per_paper: int = 6000) -> str:
     if _EXEMPLAR_CACHE is not None:
         return _EXEMPLAR_CACHE
 
-    pd_dir = os.path.join(KNOWLEDGE_DIR, "papers")
+    pd_dir = _knowledge_subdir("papers")
     if not os.path.isdir(pd_dir):
         _EXEMPLAR_CACHE = ""
         return ""
