@@ -1,5 +1,5 @@
 # ============================================================================
-# EMPIRICA v1.7 - Complete Research Pipeline
+# EMPIRICA v1.8 - Complete Research Pipeline
 # ============================================================================
 # v1.0.0: MVP — World Bank, Semantic Scholar, PubMed, 7 agents, Streamlit UI
 # v1.1.0: Model upgrade (Sonnet 4.5), extended thinking, dual literature queries,
@@ -57,7 +57,11 @@
 #        = human-authored argument base, chosen narrative injected VERBATIM as the
 #        paper's red line into Agent 5 + every writing prompt. knowledge/papers/*
 #        = exemplar papers, raw methodology excerpts injected into the methods
-#        prompt. UI gets a narrative dropdown. New dep: pypdf.
+#        prompt. New dep: pypdf.
+# v1.8: Narrative auto-selection. The dropdown is gone - a selector agent reads the
+#        narrative briefs and picks the 1-2 that the hypothesis genuinely advances
+#        (or none, which is the common and correct answer). Strict by design: a
+#        forced narrative is worse than no narrative.
 #          rough transition instructions, author-subordination enforcement,
 #          proofreader AI-cadence detection (monotone rhythm, smooth transitions,
 #          hedge stacking, evaluative filler), parenthetical aside encouragement
@@ -347,6 +351,48 @@ def load_narrative(narrative_id: str) -> str:
     text = _extract_docx_text(path)
     print(f"  \U0001F4CC Narrative loaded: {narrative_id} ({len(text):,} chars, injected verbatim)")
     return text
+
+
+def ai_select_narratives(hypothesis: str, plan: dict = None) -> str:
+    """Let the model pick the 1-2 narratives that genuinely fit this hypothesis.
+    Returns their concatenated verbatim text, or "" if none apply.
+
+    Selection is deliberately strict: an irrelevant narrative would drag the paper
+    toward an argument the data cannot support, which is worse than no narrative."""
+    available = list_narratives()
+    if not available:
+        return ""
+
+    # Show the model each narrative's opening so it judges on substance, not filename
+    previews = []
+    nd = _knowledge_subdir("narratives")
+    for nid in available:
+        head = _extract_docx_text(os.path.join(nd, f"{nid}.docx"))[:700]
+        previews.append(f"### {nid}\n{head}\n")
+    catalog = "\n".join(previews)
+
+    verdict = ask_claude_json(
+        system="""You match a research hypothesis to a house narrative brief.
+
+Return ONLY narratives whose core argument the hypothesis could actually advance.
+Be strict. Most hypotheses match NOTHING - that is the correct and common answer.
+A shared topic is not a match: the narrative's specific argument must be one this
+hypothesis can serve. Never stretch. Pick at most 2, ordered by fit.
+
+Return JSON: {"selected": ["exact id", ...], "reasoning": "one sentence"}
+Return {"selected": []} when nothing genuinely fits.""",
+        user=f"Hypothesis: \"{hypothesis}\"\n\nAvailable narratives:\n\n{catalog}\n\nWhich (if any) does this hypothesis genuinely advance?",
+        max_tokens=800,
+    )
+
+    picked = [n for n in verdict.get("selected", []) if n in available][:2]
+    if not picked:
+        print("  \U0001F4CC No narrative fits this hypothesis - proceeding without one")
+        return ""
+
+    print(f"  \U0001F4CC Narrative(s) selected: {', '.join(picked)}")
+    print(f"     Reason: {verdict.get('reasoning', 'n/a')}")
+    return "\n\n".join(load_narrative(n) for n in picked)
 
 
 _EXEMPLAR_CACHE = None
@@ -3349,8 +3395,7 @@ def _make_social_image(plan, results, interpretation, output_dir):
 # ============================================================================
 def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                  advocacy_angle: str = "", advocacy_temperature: int = 1,
-                 output_mode: str = "paper", export_excel: bool = True,
-                 narrative_id: str = ""):
+                 output_mode: str = "paper", export_excel: bool = True):
     """
     output_mode:
       "paper"        - full academic paper (default)
@@ -3359,7 +3404,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     export_excel: also write the dataset + model results to an .xlsx file
     """
     print("\n" + "=" * 60)
-    print("  EMPIRICA v1.7")
+    print("  EMPIRICA v1.8")
     print("=" * 60)
     print(f"  Input: {hypothesis}")
     print(f"  Output mode: {output_mode}")
@@ -3472,8 +3517,9 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
     except Exception as e:
         print(f"  ⚠️  Coefficient plot failed: {e}")
 
-    # Load the chosen narrative (raw, verbatim) if one was selected
-    narrative_text = load_narrative(narrative_id) if narrative_id else ""
+    # Narrative: the model picks the 1-2 that fit (or none), then they inject verbatim
+    print("\n\U0001F4CC Selecting narrative...")
+    narrative_text = ai_select_narratives(hypothesis, plan)
 
     # Agent 5: Interpret (extended thinking)
     interpretation = ai_interpret_results(results, plan, advocacy_angle, advocacy_temperature,
@@ -3500,7 +3546,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
         _save_simple_docx(brief.get("policy_brief", ""), plan.get("title", "Policy Brief"), brief_path)
         outputs["policy_brief"] = brief_path
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.7 COMPLETE (policy brief)")
+        print("  ✅ EMPIRICA v1.8 COMPLETE (policy brief)")
         print("=" * 60)
         print(f"  Brief:  {brief_path}")
         print(f"  Excel:  {excel_path}")
@@ -3514,7 +3560,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
         outputs["social_post"] = social_path
         outputs["social_image"] = social_img
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.7 COMPLETE (social media)")
+        print("  ✅ EMPIRICA v1.8 COMPLETE (social media)")
         print("=" * 60)
         print(f"  Post:   {social_path}")
         print(f"  Image:  {social_img}")
@@ -3536,7 +3582,7 @@ def run_empirica(hypothesis: str, output_dir: str = OUTPUT_DIR,
                          scatterplot_path=scatterplot_path, coeff_plot_path=coeff_plot_path)
         outputs["paper"] = paper_path
         print("\n" + "=" * 60)
-        print("  ✅ EMPIRICA v1.7 COMPLETE")
+        print("  ✅ EMPIRICA v1.8 COMPLETE")
         print("=" * 60)
         print(f"  Paper:  {paper_path}")
         print(f"  Excel:  {excel_path}")
